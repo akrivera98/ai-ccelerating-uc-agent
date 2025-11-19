@@ -1,0 +1,15 @@
+[project]
+name = "simple_agent"
+version = "0.1.0"
+description = "simple agent to establish baseline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "dill>=0.4.0",
+    "numpy>=2.3.4",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "pyyaml>=6.0.3",
+    "torch>=2.9.1",
+    "tqdm>=4.67.1",
+]

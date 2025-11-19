@@ -1,0 +1,26 @@
+experiment_name: "simple_no_round"
+
+seed: 42
+
+dataset:
+  data_dir: "data/starting_kit/Train_Data"
+
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+model:
+  input_size: 318
+  hidden_size: 128
+  output_size: 3672
+  num_hidden_layers: 3
+  final_activation: "sigmoid"   # or "relu" / "none"
+
+training:
+  batch_size: 64
+  criterion: "MSELoss"        
+  optimizer: "Adam"           
+  learning_rate: 0.001
+  num_epochs: 5
+  val_every: 5
