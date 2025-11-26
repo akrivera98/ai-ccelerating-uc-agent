@@ -10,7 +10,7 @@ splits:
   val: 0.15
   test: 0.15
 
-model:
+model: # this config works only when SimpleMLP is the only model
   input_size: 318
   hidden_size: 128
   output_size: 3672

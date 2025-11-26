@@ -4,9 +4,11 @@ import os
 import torch
 from tqdm import tqdm
 import yaml
-from src.models.simple_mlp import SimpleMLP
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
+import src.models.simple_mlp as models
+from src.models.round import ste_round
+import src.utils.losses as losses
 
 
 class Config:
@@ -33,11 +35,22 @@ def train_epoch(model, dataloader, criterion, optimizer):  # double-check this l
         features = batch["features"]
         targets = batch["target"]
 
-        # Forward pass
+        ### --  Forward pass -- ##
+
+        # Get NN output
         outputs = model(features)
+
+        # Apply rounding if specified
+        if getattr(model, "rounding_at_training", None) == "STE":
+            outputs = ste_round(outputs)
+
+        # Solve LP
+        # Need to implement this part later
+
+        ### -- Compute loss -- ##
         loss = criterion(outputs, targets)
 
-        # Backward pass
+        ### -- Backward pass -- ##
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -99,17 +112,13 @@ def main() -> None:
     val_loader = DataLoader(val_ds, batch_size=cfg.training.batch_size, shuffle=False)
     test_loader = DataLoader(test_ds, batch_size=cfg.training.batch_size, shuffle=False)
 
-    # Initialize model
-    model = SimpleMLP(
-        input_size=cfg.model.input_size,
-        hidden_size=cfg.model.hidden_size,
-        output_size=cfg.model.output_size,
-        num_hidden_layers=cfg.model.num_hidden_layers,
-        final_activation=cfg.model.final_activation,
-    )
+    # Instantiate model
+    model_name = cfg.model.name
+    ModelClass = getattr(models, model_name)
+    model = ModelClass(**cfg.model.hyper_params.__dict__)
 
     # Loss and optimizer
-    criterion = getattr(torch.nn, cfg.training.criterion)()
+    criterion = getattr(losses, cfg.training.criterion)()
     optimizer = getattr(torch.optim, cfg.training.optimizer)(
         model.parameters(), lr=cfg.training.learning_rate
     )
@@ -158,7 +167,9 @@ def main() -> None:
     print(f"Model saved to {weights_save_path}")
 
     # Save the whole mdoel
-    model_save_path = os.path.join(base_save_path, cfg.experiment_name, timestamp, "simple_mlp_model.pt")
+    model_save_path = os.path.join(
+        base_save_path, cfg.experiment_name, timestamp, "simple_mlp_model.pt"
+    )
     torch.save(model, model_save_path)
 
     # Save losses

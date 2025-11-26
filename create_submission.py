@@ -50,6 +50,8 @@ class model:
         self.generator_names = generator_names
 
     def transform_features(self, features):
+        import torch
+
         # Convert features dict of DataFrame to tensor
         df_profiles = features["Profiles"]
         df_init_conditions = features["Initial_Conditions"]
@@ -77,6 +79,8 @@ class model:
         return status
 
     def predict(self, features) -> dict[str, pd.DataFrame]:
+        import torch
+
         status = {}
         for instance_index in features.keys():
             x = self.transform_features(features[instance_index])
@@ -146,15 +150,15 @@ def main():
     print(wrapped.model.__class__.__module__)
     print(wrapped.model.__class__.__name__)
 
-    with open("submission_v2/model.dill", "wb") as file:
+    with open("submission/model.dill", "wb") as file:
         dill.dump(wrapped, file)
 
-    with open("submission_v2/model.dill", "rb") as f:
+    with open("submission/model.dill", "rb") as f:
         new_model = dill.load(f)
 
     sample_output = new_model.predict(sample_input)
 
-    with open("submission_v2/prediction.dill", "wb") as file:
+    with open("submission/prediction.dill", "wb") as file:
         dill.dump(sample_output, file)
 
 
