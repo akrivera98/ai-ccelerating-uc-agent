@@ -73,7 +73,7 @@ def create_data_dict(instance_path: str) -> dict:
         power_balance_penalty=instance_data["Parameters"][
             "Power balance penalty ($/MW)"
         ],
-        load=list(instance_data["Buses"]["b1"]["Load (MW)"].values()),
+        load=instance_data["Buses"]["b1"]["Load (MW)"],
     )
 
     data_dict = {
@@ -133,23 +133,22 @@ def _parse_thermal_gen_data(gen_name: str, gen_data: dict) -> ThermalGeneratorDa
         min_up_time=gen_data["Minimum uptime (h)"],
         initial_power=gen_data["Initial power (MW)"],
         initial_status=gen_data["Initial status (h)"],
-        min_power=gen_data["Production cost curve (MW)"]["0"],
-        max_power=list(gen_data["Production cost curve (MW)"].values())[-1],
+        min_power=gen_data["Production cost curve (MW)"][0],
+        max_power=gen_data["Production cost curve (MW)"][-1],
     )
 
 
-def _parse_production_cost_curve(mw_dict, cost_dict) -> list[Tuple[float, float]]:
+def _parse_production_cost_curve(mw_list, cost_list) -> list[Tuple[float, float]]:
     og_curve = []
     final_curve = []
-    for key in mw_dict.keys():
-        og_curve.append((cost_dict[key], mw_dict[key]))
+    og_curve = list(zip(mw_list, cost_list))
 
     num_segments = len(og_curve)
     for k in range(1, num_segments):
-        p1 = og_curve[k - 1][1]
-        p2 = og_curve[k][1]
-        c1 = og_curve[k - 1][0]
-        c2 = og_curve[k][0]
+        p1 = og_curve[k - 1][0]
+        p2 = og_curve[k][0]
+        c1 = og_curve[k - 1][1]
+        c2 = og_curve[k][1]
         marginal_cost = (c2 - c1) / (p2 - p1)
         final_curve.append((p2 - p1, marginal_cost))
 

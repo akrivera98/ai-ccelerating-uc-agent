@@ -115,10 +115,10 @@ class StorageUnitsComponent(UCComponent):
 
     def define_parameters(self):
         self.is_charging = cp.Parameter(
-            (self.num_units, self.model.T), boolean=True
+            (self.num_units, self.model.T)
         )  # check this syntax
         self.is_discharging = cp.Parameter(
-            (self.num_units, self.model.T), boolean=True
+            (self.num_units, self.model.T)
         )  # check this syntax
         return {
             "is_charging": self.is_charging,
@@ -147,21 +147,25 @@ class StorageUnitsComponent(UCComponent):
         # charge constraints
         constraints.append(
             self.charge_rate
-            >= self.is_charging * np.array(self.min_charge_rate)[:, None]
+            >= cp.multiply(self.is_charging, np.array(self.min_charge_rate)[:, None])
         )
         constraints.append(
             self.charge_rate
-            <= self.is_charging * np.array(self.max_charge_rate)[:, None]
+            <= cp.multiply(self.is_charging, np.array(self.max_charge_rate)[:, None])
         )
 
         # discharge constraints
         constraints.append(
             self.discharge_rate
-            >= self.is_discharging * np.array(self.min_discharge_rate)[:, None]
+            >= cp.multiply(
+                self.is_discharging, np.array(self.min_discharge_rate)[:, None]
+            )
         )
         constraints.append(
             self.discharge_rate
-            <= self.is_discharging * np.array(self.max_discharge_rate)[:, None]
+            <= cp.multiply(
+                self.is_discharging, np.array(self.max_discharge_rate)[:, None]
+            )
         )
 
         # Storage level constraint
@@ -183,8 +187,8 @@ class StorageUnitsComponent(UCComponent):
         constraints.append(
             self.storage_level[:, 1:]
             == (1 - loss_factors) * self.storage_level[:, :-1]
-            + self.charge_rate[:, 1:] * charge_eff
-            - self.discharge_rate[:, 1:] / discharge_eff
+            + cp.multiply(self.charge_rate[:, 1:], charge_eff[:, None])
+            - cp.multiply(self.discharge_rate[:, 1:], 1 / discharge_eff[:, None])
         )
 
         # End storage level constraints
@@ -236,7 +240,7 @@ class ThermalGeneratorsComponent(UCComponent):
         )  # shape (n_units, 1, max_segments)
 
     def define_parameters(self):
-        self.is_on = cp.Parameter((self.num_units, self.model.T), boolean=True)
+        self.is_on = cp.Parameter((self.num_units, self.model.T))
 
         return {
             "is_on": self.is_on,

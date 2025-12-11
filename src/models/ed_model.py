@@ -1,3 +1,4 @@
+from cvxpylayers.torch import CvxpyLayer
 import cvxpy as cp
 from src.models.components import (
     ProfiledGeneratorsComponent,
@@ -60,7 +61,25 @@ class UCModel:
         # 5. Build the CVXPY problem
         self.problem = cp.Problem(self.objective, self.constraints)
 
+    def build_layer(self):
+        if self.problem is None:
+            self.build()
+
+        params_list = [
+            self.thermal_gens.is_on,
+            self.storage_units.is_charging,
+            self.storage_units.is_discharging,
+        ]
+
+        self.cvxpy_layer = CvxpyLayer(
+            self.problem,
+            parameters=params_list,
+            variables=list(self.variables.values()),
+        )
+        return self.cvxpy_layer
+
     def solve(self, **kwargs):
         if self.problem is None:
             self.build()
+
         return self.problem.solve(**kwargs)
