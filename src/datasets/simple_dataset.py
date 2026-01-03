@@ -48,7 +48,11 @@ class SimpleDataset(Dataset):
             -1
         )  # dims (72 * 51, )
 
-        return {"features": features, "target": target}
+        profiles = torch.tensor(df_profiles.iloc[:, 1:].to_numpy(), dtype=torch.float32)         # (72, 3) if demand/wind/solar
+        init_conds = torch.tensor(df_init_conditions.iloc[:, 1:].to_numpy(), dtype=torch.float32)           # (51, 2) e.g. (init_power, init_status)
+        y = torch.tensor(df_targets.to_numpy(), dtype=torch.float32)       
+
+        return {"features": {"profiles": profiles, "initial_conditions": init_conds}, "target": y}
 
     def __getitem__(self, idx: int) -> dict:
         path_features = self.features_files[idx]

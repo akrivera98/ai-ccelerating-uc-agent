@@ -2,3 +2,4 @@ data/
 *.pyc
 results/
 *.DS_Store
+*/__pycache__

@@ -9,7 +9,8 @@ from torch.utils.data import DataLoader, random_split
 import src.models.simple_mlp as models
 from src.models.round import ste_round
 import src.utils.losses as losses
-
+from src.models.ed_model import UCModel
+from src.models.data_classes import create_data_dict
 
 class Config:
     def __init__(self, cfg_dict):
@@ -28,29 +29,38 @@ def load_config(config_path: str) -> Config:
     return Config(raw_cfg)
 
 
-def train_epoch(model, dataloader, criterion, optimizer):  # double-check this later
+def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
     model.train()
     total_loss = 0
     for batch in tqdm(dataloader):
         features = batch["features"]
         targets = batch["target"]
 
-        ### --  Forward pass -- ##
+        ### Forward pass
 
-        # Get NN output
+        ## Get NN output (relaxed commitments)
         outputs = model(features)
 
-        # Apply rounding if specified
+        ## Update ed_data with NN outputs  # TODO: implement this later
+        # ed_data["thermal_commitments"] = outputs
+        # ed_data["storage_commitments"] = outputs
+
+        ## Apply rounding if specified
         if getattr(model, "rounding_at_training", None) == "STE":
             outputs = ste_round(outputs)
 
-        # Solve LP
-        # Need to implement this part later
+        ## Solve LP
+        ### Solve ED problem given commitments and features
+        load = features["profiles"][:, :, 0]
+        solar_max = features["profiles"][:, :, 2]
+        wind_max = features["profiles"][:, :, 1]
+        ed_solution = ed_layer(load, solar_max, wind_max, outputs)  # TODO: you need to add the storage here too once you've added it in the NN
 
-        ### -- Compute loss -- ##
-        loss = criterion(outputs, targets)
+        ## Compute loss
+        initial_status = features["initial_conditions"][:, 0, 0] # TODO: check indexing later
+        loss = criterion(ed_solution, outputs, targets, initial_status)
 
-        ### -- Backward pass -- ##
+        ### Backward pass
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -78,7 +88,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=str,
-        required=True,
+        default="configs/idea_1_config.yaml",
         help="Path to the configuration file (YAML format).",
     )
     args = parser.parse_args()
@@ -117,6 +127,10 @@ def main() -> None:
     ModelClass = getattr(models, model_name)
     model = ModelClass(**cfg.model.hyper_params.__dict__)
 
+    # Instantiate ED layer
+    ed_data_dict = create_data_dict(cfg.dataset.ed_instance_path)
+    ed_layer = UCModel(ed_data_dict).build_layer()
+
     # Loss and optimizer
     criterion = getattr(losses, cfg.training.criterion)()
     optimizer = getattr(torch.optim, cfg.training.optimizer)(
@@ -130,10 +144,10 @@ def main() -> None:
 
     for epoch in range(cfg.training.num_epochs):
         print(f"Epoch {epoch + 1}/{cfg.training.num_epochs}")
-        train_loss = train_epoch(model, train_loader, criterion, optimizer)
+        train_loss = train_epoch(model, ed_layer, train_loader, criterion, optimizer)
         train_losses.append(train_loss)
 
-        # 2) Validate only every val_every epochs, and always on the last one
+        # Validate only every val_every epochs, and always on the last one
         do_val = ((epoch + 1) % val_every == 0) or (
             epoch + 1 == cfg.training.num_epochs
         )

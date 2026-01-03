@@ -73,7 +73,7 @@ def create_data_dict(instance_path: str) -> dict:
         power_balance_penalty=instance_data["Parameters"][
             "Power balance penalty ($/MW)"
         ],
-        load=instance_data["Buses"]["b1"]["Load (MW)"],
+        load=instance_data["Buses"]["b1"]["Load (MW)"], # should be a parameter, does it matter if i have it here too?
     )
 
     data_dict = {

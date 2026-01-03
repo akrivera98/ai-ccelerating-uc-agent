@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 import cvxpy as cp
 import numpy as np
 from src.models.data_classes import (
-    ProfiledGeneratorData,
     SystemData,
     StorageUnitData,
     ThermalGeneratorData,
@@ -29,43 +28,71 @@ class UCComponent(ABC):
 
 
 class ProfiledGeneratorsComponent(UCComponent):
-    def __init__(self, model, list_profiled_gen_data: list[ProfiledGeneratorData]):
+    def __init__(self, model, list_profiled_gen_data):
         super().__init__(model)
-        self.cost = [
-            profiled_gen_data.cost for profiled_gen_data in list_profiled_gen_data
-        ]
-        self.min_power = [
-            profiled_gen_data.min_power for profiled_gen_data in list_profiled_gen_data
-        ]
-        self.max_power = [
-            profiled_gen_data.max_power for profiled_gen_data in list_profiled_gen_data
-        ]
-        self.n_gens = len(list_profiled_gen_data)
-
+        self.data = list_profiled_gen_data
+        self.n_gens = len(self.data)
         self.T = model.T
+
+        self.names = [g.name for g in self.data]
+        self.cost = np.array([g.cost for g in self.data], dtype=float)  # (n_gens,)
+        self.min_power = np.array(
+            [g.min_power for g in self.data], dtype=float
+        )  # (n_gens,)
+        self.max_power = np.array(
+            [g.max_power for g in self.data], dtype=float
+        )  # (n_gens,)
+
+        # Find indices
+        self.idx_solar = self.names.index("solar")
+        self.idx_wind = self.names.index("wind")
+        self.idx_hydro = [
+            i for i, n in enumerate(self.names) if n not in ("solar", "wind")
+        ]
 
     def define_variables(self):
         self.profiled_generation = cp.Variable((self.n_gens, self.T), nonneg=True)
         return {"profiled_generation": self.profiled_generation}
 
+    def define_parameters(self):
+        self.max_power_solar = cp.Parameter(
+            (1, self.T), nonneg=True, name="max_power_solar"
+        )
+        self.max_power_wind = cp.Parameter(
+            (1, self.T), nonneg=True, name="max_power_wind"
+        )
+        return {
+            "max_power_solar": self.max_power_solar,
+            "max_power_wind": self.max_power_wind,
+        }
+
     def define_constraints(self):
         constraints = []
 
-        # upper and lower bounds
-        min_powers = np.array(self.min_power)
-        max_powers = np.array(self.max_power)
-        constraints.append(
-            self.profiled_generation >= min_powers
-        )  # double-check shapes
-        constraints.append(
-            self.profiled_generation <= max_powers
-        )  # double-check shapes
+        # Lower bounds: (n_gens, 1) so it broadcasts across T
+        min_powers = self.min_power[:, None]  # (n_gens, 1)
+        constraints.append(self.profiled_generation >= min_powers)
+
+        # Build max_powers_full row-by-row in the SAME order as self.data
+        rows = []
+        for i, name in enumerate(self.names):
+            if name == "solar":
+                rows.append(self.max_power_solar)  # (1, T)
+            elif name == "wind":
+                rows.append(self.max_power_wind)  # (1, T)
+            else:
+                rows.append(
+                    np.full((1, self.T), self.max_power[i], dtype=float)
+                )  # constant (1, T)
+
+        max_powers_full = cp.vstack(rows)  # (n_gens, T)
+        constraints.append(self.profiled_generation <= max_powers_full)
+
         return constraints
 
     def define_objective(self):
-        cost = np.array(self.cost)[:, None]  # shape (n_gens, 1) # double-check shapes
-        generation_cost = cp.sum(cp.multiply(cost, self.profiled_generation))
-        return generation_cost
+        cost = self.cost[:, None]  # (n_gens, 1)
+        return cp.sum(cp.multiply(cost, self.profiled_generation))
 
 
 class StorageUnitsComponent(UCComponent):
@@ -169,15 +196,15 @@ class StorageUnitsComponent(UCComponent):
         )
 
         # Storage level constraint
-        loss_factors = np.array(self.loss_factors)
-        charge_eff = np.array(self.charge_efficiencies)
-        discharge_eff = np.array(self.discharge_efficiencies)
-        initial_levels = np.array(self.initial_levels).reshape(self.num_units, 1)
+        loss_factors = np.array(self.loss_factors)[:, None]
+        charge_eff = np.array(self.charge_efficiencies)[:, None]
+        discharge_eff = np.array(self.discharge_efficiencies)[:, None]
+        initial_levels = np.array(self.initial_levels)[:, None]
 
         # TODO: check timestep (assumed to be 1 here)
         # for t == 0:
         constraints.append(
-            self.storage_level[:, 0]
+            self.storage_level[:, [0]]
             == initial_levels * (1 - loss_factors)
             + self.charge_rate[:, 0] * charge_eff
             - self.discharge_rate[:, 0] / discharge_eff
@@ -186,9 +213,9 @@ class StorageUnitsComponent(UCComponent):
         # for all other t
         constraints.append(
             self.storage_level[:, 1:]
-            == (1 - loss_factors) * self.storage_level[:, :-1]
-            + cp.multiply(self.charge_rate[:, 1:], charge_eff[:, None])
-            - cp.multiply(self.discharge_rate[:, 1:], 1 / discharge_eff[:, None])
+            == cp.multiply((1 - loss_factors), self.storage_level[:, :-1])
+            + cp.multiply(self.charge_rate[:, 1:], charge_eff)
+            - cp.multiply(self.discharge_rate[:, 1:], 1 / discharge_eff)
         )
 
         # End storage level constraints
@@ -259,7 +286,7 @@ class ThermalGeneratorsComponent(UCComponent):
             "prod_above": self.prod_above,
         }
 
-    def define_constraints(self):  # chatgy made these, double-check.
+    def define_constraints(self):  # chatgpt made these, double-check.
         constraints = []
 
         max_power = np.maximum(self.max_power, 0.0)  # shape (G, T)
@@ -327,6 +354,7 @@ class SystemComponent(UCComponent):
 
     def define_parameters(self):
         self.load = cp.Parameter(self.T, name="load")
+        return {"load": self.load}
 
     def define_constraints(self):
         constraints = []

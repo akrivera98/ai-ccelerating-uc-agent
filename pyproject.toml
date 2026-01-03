@@ -14,3 +14,6 @@ dependencies = [
     "torch==2.9.1",
     "tqdm>=4.67.1",
 ]
+
+[tool.setuptools]
+packages = ["src"]

@@ -1,4 +1,5 @@
 from torch import nn
+import torch
 
 
 class SimpleMLP(nn.Module):
@@ -30,7 +31,10 @@ class SimpleMLP(nn.Module):
 
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: dict[str, torch.Tensor]) -> torch.Tensor:
+        order = sorted(x.keys())
+        x = torch.cat([x[k] for k in order], dim=-1)
+
         out = self.net(x)
         if not self.training:
             out = (out > 0.5).float()
@@ -67,7 +71,14 @@ class MLP(nn.Module):
 
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: dict[str, torch.Tensor]) -> torch.Tensor:
+        profiles = x["profiles"].reshape(x["profiles"].shape[0], -1)
+        init_conds = x["initial_conditions"].reshape(
+            x["initial_conditions"].shape[0], -1
+        )
+        x = torch.cat([profiles, init_conds], dim=-1)
         out = self.net(x)
+        if not self.training:
+            out = (out > 0.5).float()
 
         return out

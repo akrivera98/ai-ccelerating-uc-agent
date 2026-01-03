@@ -43,6 +43,8 @@ class UCModel:
         # 2. Define parameters for each component
         self.parameters.update(self.storage_units.define_parameters())
         self.parameters.update(self.thermal_gens.define_parameters())
+        self.parameters.update(self.system.define_parameters())
+        self.parameters.update(self.profiled_gens.define_parameters())
 
         # 2. Collect constraints from components
         self.constraints += self.profiled_gens.define_constraints()
@@ -66,6 +68,9 @@ class UCModel:
             self.build()
 
         params_list = [
+            self.system.load,
+            self.profiled_gens.max_power_solar,
+            self.profiled_gens.max_power_wind,
             self.thermal_gens.is_on,
             self.storage_units.is_charging,
             self.storage_units.is_discharging,
