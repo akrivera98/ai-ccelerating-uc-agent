@@ -12,6 +12,7 @@ import src.utils.losses as losses
 from src.models.ed_model import UCModel
 from src.models.data_classes import create_data_dict
 
+
 class Config:
     def __init__(self, cfg_dict):
         for key, value in cfg_dict.items():
@@ -39,26 +40,36 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
         ### Forward pass
 
         ## Get NN output (relaxed commitments)
-        outputs = model(features)
-
-        ## Update ed_data with NN outputs  # TODO: implement this later
-        # ed_data["thermal_commitments"] = outputs
-        # ed_data["storage_commitments"] = outputs
+        outputs_dict = model(features)
+        is_charging = outputs_dict["is_charging"]  # TODO: check dims
+        is_discharging = outputs_dict["is_discharging"]  # TODO: check dims
 
         ## Apply rounding if specified
-        if getattr(model, "rounding_at_training", None) == "STE":
-            outputs = ste_round(outputs)
+        outputs_dict["thermal_on_rounded"] = ste_round(
+            outputs_dict["thermal_on"]
+        )  # TODO: check dims
 
         ## Solve LP
         ### Solve ED problem given commitments and features
         load = features["profiles"][:, :, 0]
-        solar_max = features["profiles"][:, :, 2]
-        wind_max = features["profiles"][:, :, 1]
-        ed_solution = ed_layer(load, solar_max, wind_max, outputs)  # TODO: you need to add the storage here too once you've added it in the NN
+        solar_max = features["profiles"][:, :, 2].unsqueeze(1)
+        wind_max = features["profiles"][:, :, 1].unsqueeze(1)
+        ed_solution = ed_layer(
+            load,
+            solar_max,
+            wind_max,
+            outputs_dict["thermal_on_rounded"],
+            is_charging,
+            is_discharging,
+            # solver_args={"verbose": True},
+        )
 
         ## Compute loss
-        initial_status = features["initial_conditions"][:, 0, 0] # TODO: check indexing later
-        loss = criterion(ed_solution, outputs, targets, initial_status)
+        initial_commitment = features["initial_conditions"][:, :, -1] > 0
+        initial_status = features["initial_conditions"][:, :, -1]
+        loss = criterion(
+            ed_solution, outputs_dict, targets, initial_status, initial_commitment
+        )
 
         ### Backward pass
         optimizer.zero_grad()
@@ -132,7 +143,7 @@ def main() -> None:
     ed_layer = UCModel(ed_data_dict).build_layer()
 
     # Loss and optimizer
-    criterion = getattr(losses, cfg.training.criterion)()
+    criterion = getattr(losses, cfg.training.criterion)(ed_data_dict)
     optimizer = getattr(torch.optim, cfg.training.optimizer)(
         model.parameters(), lr=cfg.training.learning_rate
     )

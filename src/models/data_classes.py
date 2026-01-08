@@ -60,13 +60,15 @@ def create_data_dict(instance_path: str) -> dict:
     storage_units_data_list = []
     thermal_gens_data_list = []
 
-    for g_name, g_data in instance_data["Generators"].items():
+    for g_name in sorted(instance_data["Generators"].keys()):
+        g_data = instance_data["Generators"][g_name]
         if g_data["Type"] == "Profiled":
             profiled_gens_data_list.append(_parse_profiled_gen_data(g_name, g_data))
         elif g_data["Type"] == "Thermal":
             thermal_gens_data_list.append(_parse_thermal_gen_data(g_name, g_data))
 
-    for s_name, s_data in instance_data["Storage units"].items():
+    for s_name in sorted(instance_data["Storage units"].keys()):
+        s_data = instance_data["Storage units"][s_name]
         storage_units_data_list.append(_parse_storage_units_data(s_name, s_data))
 
     system_data = SystemData(
