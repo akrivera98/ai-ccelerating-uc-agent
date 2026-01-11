@@ -1,5 +1,15 @@
 from torch import nn
+from src.models.registry import register_model
 
+@register_model("Simple_MLP")
+def build_simple_mlp_model(cfg):
+    return SimpleMLP(
+        input_size=cfg.input_size,
+        hidden_size=cfg.hidden_size,
+        output_size=cfg.output_size,
+        num_hidden_layers=cfg.num_hidden_layers,
+        final_activation=cfg.final_activation,
+    )
 
 class SimpleMLP(nn.Module):
     def __init__(
@@ -8,7 +18,7 @@ class SimpleMLP(nn.Module):
         hidden_size: int,
         output_size: int,
         num_hidden_layers: int,
-        final_activation: str = None,
+        final_activation: str = "",
     ):
         super().__init__()
 

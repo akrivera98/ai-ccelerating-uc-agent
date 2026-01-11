@@ -1,9 +1,9 @@
-experiment_name: "simple_no_round"
+experiment_name: "simple_round"
 
 seed: 42
 
 dataset:
-  data_dir: "data/"
+  data_dir: "data/Train_Data/"
 
 splits:
   train: 0.70
@@ -11,17 +11,17 @@ splits:
   test: 0.15
 
 model:
-  name: "Simple_MLP"
+  name: "MLP_with_rounding"
   input_size: 318
   hidden_size: 128
   output_size: 3672
   num_hidden_layers: 3
-  final_activation: "sigmoid"
+  rounding_strategy: "RC"
 
 training:
   batch_size: 64
-  criterion: "MSELoss"        
+  criterion: "BCELoss"        
   optimizer: "Adam"           
   learning_rate: 0.001
-  num_epochs: 10
+  num_epochs: 50
   val_every: 5

@@ -1,1 +1,7 @@
 data/
+*.pyc
+eval/output/
+eval/instances_actual_data.csv
+eval/test_data/
+submission/
+results/

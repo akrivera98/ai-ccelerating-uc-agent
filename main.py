@@ -4,29 +4,13 @@ import os
 import torch
 from tqdm import tqdm
 import yaml
-from src.models.simple_mlp import SimpleMLP
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
+from src.models.registry import build_model
+from src.util import load_config
 
 
-class Config:
-    def __init__(self, cfg_dict):
-        for key, value in cfg_dict.items():
-            if isinstance(value, dict):
-                value = Config(value)  # recursively convert nested dicts
-            setattr(self, key, value)
-
-    def __repr__(self):
-        return f"{self.__dict__}"
-
-
-def load_config(config_path: str) -> Config:
-    with open(config_path, "r") as f:
-        raw_cfg = yaml.safe_load(f)
-    return Config(raw_cfg)
-
-
-def train_epoch(model, dataloader, criterion, optimizer):  # double-check this later
+def train_epoch(model, dataloader, criterion, optimizer, verbose=False):  # double-check this later
     model.train()
     total_loss = 0
     for batch in tqdm(dataloader):
@@ -35,6 +19,8 @@ def train_epoch(model, dataloader, criterion, optimizer):  # double-check this l
 
         # Forward pass
         outputs = model(features)
+        if verbose:
+            print(outputs)
         loss = criterion(outputs, targets)
 
         # Backward pass
@@ -100,13 +86,7 @@ def main() -> None:
     test_loader = DataLoader(test_ds, batch_size=cfg.training.batch_size, shuffle=False)
 
     # Initialize model
-    model = SimpleMLP(
-        input_size=cfg.model.input_size,
-        hidden_size=cfg.model.hidden_size,
-        output_size=cfg.model.output_size,
-        num_hidden_layers=cfg.model.num_hidden_layers,
-        final_activation=cfg.model.final_activation,
-    )
+    model = build_model(cfg.model)
 
     # Loss and optimizer
     criterion = getattr(torch.nn, cfg.training.criterion)()
@@ -121,7 +101,11 @@ def main() -> None:
 
     for epoch in range(cfg.training.num_epochs):
         print(f"Epoch {epoch + 1}/{cfg.training.num_epochs}")
-        train_loss = train_epoch(model, train_loader, criterion, optimizer)
+        if epoch > 5:
+            verbose = False
+        else:
+            verbose = False
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, verbose=verbose)
         train_losses.append(train_loss)
 
         # 2) Validate only every val_every epochs, and always on the last one
