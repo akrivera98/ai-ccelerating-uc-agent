@@ -22,7 +22,7 @@ model:
 rounding_at_training: "STE"
 
 training:
-  batch_size: 64
+  batch_size: 2
   criterion: "CustomLoss"        
   optimizer: "Adam"           
   learning_rate: 0.001

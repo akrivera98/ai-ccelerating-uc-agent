@@ -2,6 +2,7 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
+
 class SimpleMLP(nn.Module):
     def __init__(
         self,
@@ -112,9 +113,11 @@ class TwoHeadMLP(nn.Module):
             layers.append(nn.ReLU())
         self.trunk = nn.Sequential(*layers)
 
-        # Heads 
-        self.thermal_head = nn.Linear(hidden_size, T * G) # logits
-        self.storage_head = nn.Linear(hidden_size, T * S * 3) # logits, 3 classes (idle, charge, discharge)
+        # Heads
+        self.thermal_head = nn.Linear(hidden_size, T * G)  # logits
+        self.storage_head = nn.Linear(
+            hidden_size, T * S * 3
+        )  # logits, 3 classes (idle, charge, discharge)
 
     def forward(self, x: dict[str, torch.Tensor]) -> torch.Tensor:
         profiles = x["profiles"].reshape(x["profiles"].shape[0], -1)
@@ -133,14 +136,14 @@ class TwoHeadMLP(nn.Module):
 
         # Get hard storage decisions
         y = F.gumbel_softmax(storage_logits, tau=self.tau, hard=True, dim=-1)
-        
+
         is_charging = y[..., 1]
         is_discharging = y[..., 2]
 
         return {
-            "thermal_on": thermal_on,
-            "thermal_logits": thermal_logits, # to be used in the loss 
+            "is_on": thermal_on,
+            "thermal_logits": thermal_logits,  # to be used in the loss
             "is_charging": is_charging,
             "is_discharging": is_discharging,
-            "storage_logits": storage_logits # to be used in the loss
+            "storage_logits": storage_logits,  # to be used in the loss
         }

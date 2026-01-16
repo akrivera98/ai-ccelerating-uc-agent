@@ -118,7 +118,7 @@ class CustomLoss(nn.Module):
         seg_prod = ed_solution[4]
         prod_above = ed_solution[5]
         curtailment = ed_solution[6]
-        commitment = nn_outputs["thermal_on"]
+        commitment = nn_outputs["is_on"]
 
         # Compute profiled units cost
         profiled_units_cost = (
@@ -166,8 +166,32 @@ class CustomLoss(nn.Module):
         self, ed_solution, outputs_dict, targets, initial_status, initial_commitment
     ):
         # Supervised loss terms
+        supervised_loss_term = self.compute_supervised_loss(outputs_dict, targets)
+
+        self.switch_on, self.switch_off = self._compute_switch_on_off(
+            outputs_dict["is_on_rounded"], initial_commitment=initial_commitment
+        )
+
+        # Unsupervised loss terms
+        economic_dispatch_cost = self.get_economic_dispatch_cost(
+            ed_solution, outputs_dict, self.switch_on
+        )  # TODO: check that this cost and the LP objective are the same.
+
+        # Constraint violation loss terms
+        up_down_time_violations_cost = self.compute_constraint_violations(
+            outputs_dict["is_on_rounded"],
+            self.switch_on,
+            self.switch_off,
+            initial_status=initial_commitment,
+        )
+
+        return (
+            economic_dispatch_cost + supervised_loss_term + up_down_time_violations_cost
+        )
+
+    def compute_supervised_loss(self, outputs_dict, targets):
         thermal_commitment_loss = self.is_on_sup_loss(
-            outputs_dict["thermal_on"], targets["thermal_commitment"]
+            outputs_dict["is_on"], targets["is_on"]
         )
 
         is_charging_loss = self.is_charging_sup_loss(
@@ -177,43 +201,53 @@ class CustomLoss(nn.Module):
         is_discharging_loss = self.is_discharging_sup_loss(
             outputs_dict["is_discharging"], targets["is_discharging"]
         )
-        
+
         supervised_loss_term = (
             thermal_commitment_loss + is_charging_loss + is_discharging_loss
         )
 
-        self.switch_on, self.switch_off = _compute_switch_on_off(
-            outputs_dict["thermal_on_rounded"], initial_status=initial_commitment
-        )
+        return supervised_loss_term
 
-        # Unsupervised loss terms
-        economic_dispatch_cost = self.get_economic_dispatch_cost(
-            ed_solution, outputs_dict, self.switch_on
-        )  # TODO: check that this cost and the LP objective are the same.
-
-        # Constraint violation loss terms
+    def compute_constraint_violations(
+        self, is_on, switch_on, switch_off, initial_status
+    ):
         uptime_violations, downtime_violations = _evaluate_uptime_downtime_constraints(
-            outputs_dict,
-            self.switch_on,
-            self.switch_off,
+            is_on,
+            switch_on,
+            switch_off,
             self.min_uptimes,
             self.min_downtimes,
             initial_status=initial_status,
         )
 
-        uptime_violation_cost = uptime_violations.sum()
-        downtime_violation_cost = downtime_violations.sum()
+        violations_cost = uptime_violations.sum() + downtime_violations.sum()
 
-        return (
-            economic_dispatch_cost
-            + supervised_loss_term
-            + self.violations_penalty
-            * (uptime_violation_cost + downtime_violation_cost)
-        )
+        return self.violations_penalty * violations_cost
+
+    def _compute_switch_on_off(
+        self, outputs: torch.tensor, initial_commitment: torch.tensor
+    ):
+        """
+        Compute switch-on events for thermal generators.
+
+        Args:
+            outputs (torch.tensor): Binary tensor indicating on/off status of generators. Dimensions: (T, num_units)
+            initial_commitment (torch.tensor): Initial on/off status of generators. Dimensions: (num_units, )
+        Returns:
+            switch_on_events (torch.tensor): Tensor indicating switch-on events.
+        """
+        prev = torch.cat(
+            (initial_commitment.unsqueeze(-1), outputs[:, :, :-1]), dim=2
+        )  # (G, T), excluding last time step
+
+        switch_on = (1.0 - prev) * outputs
+        switch_off = prev * (1.0 - outputs)  # (B, G, T)
+
+        return switch_on, switch_off
 
 
 def _evaluate_uptime_downtime_constraints(
-    outputs: torch.tensor,
+    is_on: torch.tensor,
     switch_on: torch.tensor,
     switch_off: torch.tensor,
     min_uptimes: torch.tensor,
@@ -224,51 +258,29 @@ def _evaluate_uptime_downtime_constraints(
     Evaluate minimum uptime violations for thermal generators.
 
     Args:
-        outputs (torch.tensor): Binary tensor indicating on/off status of generators.
+        is_on (torch.tensor): Binary tensor indicating on/off status of generators.
         min_uptimes (torch.tensor): Tensor indicating minimum uptime requirements.
     Returns:
         constraint_violations (torch.tensor): Tensor indicating minimum uptime violations.
     """
 
-    is_on = outputs["thermal_on_rounded"]  # (B, G, T)
-
     uptime_violations = _get_min_uptime_violations(
-        switch_on, is_on, min_uptimes, initial_status
+        switch_on, switch_off, is_on, min_uptimes, initial_status
     )  # TODO: check the initial status logic
     downtime_violations = _get_min_downtime_violations(
-        switch_off, is_on, min_downtimes, initial_status
+        switch_on, switch_off, is_on, min_downtimes, initial_status
     )  # TODO: check the initial status logic
 
     return uptime_violations, downtime_violations  # decide on a norm later
 
 
-def _compute_switch_on_off(outputs: torch.tensor, initial_status: torch.tensor):
-    """
-    Compute switch-on events for thermal generators.
-
-    Args:
-        outputs (torch.tensor): Binary tensor indicating on/off status of generators. Dimensions: (T, num_units)
-        initial_status (torch.tensor): Initial on/off status of generators. Dimensions: (num_units, )
-    Returns:
-        switch_on_events (torch.tensor): Tensor indicating switch-on events.
-    """
-    prev = torch.cat(
-        (initial_status.unsqueeze(-1), outputs[:, :, :-1]), dim=2
-    )  # (G, T), excluding last time step
-
-    switch_on = (1.0 - prev) * outputs
-    switch_off = prev * (1.0 - outputs)  # (B, G, T)
-
-    return switch_on, switch_off
-
-
 def _get_min_uptime_violations(  # TODO: CHECK THE LOGIC HERE
     switch_on: torch.Tensor,  # (B, G, T)
+    switch_off: torch.Tensor,  # (B, G, T)
     is_on: torch.Tensor,  # (B, G, T)
     min_uptimes: torch.Tensor,  # (G,)
     initial_status: torch.Tensor,  # (B, G)
 ) -> torch.Tensor:
-
     B, G, T = switch_on.shape
     device = is_on.device
     dtype = is_on.dtype
@@ -277,55 +289,49 @@ def _get_min_uptime_violations(  # TODO: CHECK THE LOGIC HERE
 
     violations = torch.zeros((B, G, T), device=device, dtype=dtype)
 
-    # Pre-horizon remaining uptime
-    init_on_time = torch.clamp(initial_status.to(device=device), min=0).long()  # (B,G)
-    remaining_uptime = torch.clamp(U.unsqueeze(0) - init_on_time, min=0)  # (B,G)
-
+    # Minimum uptime for initial periods
     t_idx = torch.arange(T, device=device).view(1, 1, T)  # (1,1,T)
-    early_mask = (t_idx < remaining_uptime.unsqueeze(-1)).to(dtype)  # (B,G,T)
+    init_on_time = initial_status.to(device=device).clamp(min=0).long()  # (B,G)
+    remaining_uptime = torch.clamp(U.unsqueeze(0) - init_on_time, min=0).long()  # (B,G)
 
-    # If must be ON and is_on=0 => violation = 1 - is_on
-    violations = violations + early_mask * (1.0 - is_on)
+    has_to_be_on_mask = (t_idx < remaining_uptime.unsqueeze(-1)) & (
+        initial_status.unsqueeze(-1) > 0
+    )  # (B,G,T)
 
-    # In-horizon startup violations
-    for Uval in torch.unique(U):
-        Uval = int(Uval.item())
-        if Uval <= 0:
-            continue
-        if T - Uval + 1 <= 0:
-            continue
+    violations = violations + (switch_off * has_to_be_on_mask).sum(dim=-1).unsqueeze(
+        -1
+    )  # (B, G)
 
-        gens = (
-            (U == Uval).nonzero(as_tuple=False).view(-1)
-        )  # indices of generators with this U
-        if gens.numel() == 0:
-            continue
+    # Minimum uptime for the rest of the periods
 
-        u_g = is_on[:, gens, :]  # (B, ng, T)
-        sw_g = switch_on[:, gens, :]  # (B, ng, T)
+    # Prefix sum on switch_on
+    cumsum_switch_on = torch.cumsum(switch_on, dim=-1)  # (B, G, T)
 
-        # u_windows: (B, ng, T-U+1, U)
-        u_windows = u_g.unfold(dimension=2, size=Uval, step=1)
-        window_sum = u_windows.sum(dim=-1)  # (B, ng, T-U+1)
+    V = torch.cat(
+        [torch.zeros((B, G, 1), device=device, dtype=dtype), cumsum_switch_on], dim=-1
+    )  # (B, G, T+1) adds a leading 0 so prefix sum at -1 is 0
+    U_exp = U.view(1, G, 1)  # (1, G, 1)
+    idx = (t_idx - U_exp + 1).clamp(
+        min=0, max=T
+    )  # index where the rolling window starts, + 1 because of the leading 0 in V
 
-        # violation amount per potential startup time t
-        v = F.relu(Uval - window_sum).to(dtype)  # (B, ng, T-U+1)
+    V_shifted = V.gather(dim=-1, index=idx.expand(B, G, T))
 
-        # apply only where startup actually occurs (valid times t=0..T-U)
-        sw_valid = sw_g[:, :, : T - Uval + 1].to(dtype)  # (B, ng, T-U+1)
-        violations[:, gens, : T - Uval + 1] += sw_valid * v
+    window_sum = cumsum_switch_on - V_shifted  # (B, G, T)
 
+    violations = F.relu(window_sum - is_on)  # (B, G, T)
 
     return violations
 
 
 def _get_min_downtime_violations(  # TODO: CHECK THE LOGIC HERE
+    switch_on: torch.Tensor,  # (B, G, T)
     switch_off: torch.Tensor,  # (B, G, T)
     is_on: torch.Tensor,  # (B, G, T)
     min_downtimes: torch.Tensor,  # (G,)
     initial_status: torch.Tensor,  # (B, G)
 ) -> torch.Tensor:
-    B, G, T = switch_off.shape
+    B, G, T = switch_on.shape
     device = is_on.device
     dtype = is_on.dtype
 
@@ -333,43 +339,39 @@ def _get_min_downtime_violations(  # TODO: CHECK THE LOGIC HERE
 
     violations = torch.zeros((B, G, T), device=device, dtype=dtype)
 
-    # Pre-horizon remaining downtime
-    init_off_time = torch.clamp(
-        -initial_status.to(device=device), min=0
-    ).long()  # (B,G)
-    remaining_downtime = torch.clamp(D.unsqueeze(0) - init_off_time, min=0)  # (B,G)
-
+    # Minimum uptime for initial periods
     t_idx = torch.arange(T, device=device).view(1, 1, T)  # (1,1,T)
-    early_mask = (t_idx < remaining_downtime.unsqueeze(-1)).to(dtype)  # (B,G,T)
+    init_off_time = initial_status.to(device=device).clamp(max=0).long()  # (B,G)
+    remaining_downtime = torch.clamp(
+        D.unsqueeze(0) - init_off_time, min=0
+    ).long()  # (B,G)
 
-    # If must be OFF and is_on=1 => violation = is_on
-    violations = violations + early_mask * is_on
+    has_to_be_off_mask = (t_idx < remaining_downtime.unsqueeze(-1)) & (
+        initial_status.unsqueeze(-1) == 0
+    )  # (B,G,T)
 
-    # In-horizon shutdown violations.
-    for Dval in torch.unique(D):
-        Dval = int(Dval.item())
-        if Dval <= 0:
-            continue
-        if T - Dval + 1 <= 0:
-            continue
+    violations = violations + (switch_on * has_to_be_off_mask).sum(dim=-1).unsqueeze(
+        -1
+    )  # (B, G)
 
-        gens = (D == Dval).nonzero(as_tuple=False).view(-1)
-        if gens.numel() == 0:
-            continue
+    # Minimum uptime for the rest of the periods
 
-        u_g = is_on[:, gens, :]  # (B, ng, T)
-        sw_g = switch_off[:, gens, :]  # (B, ng, T)
+    # Prefix sum on switch_off
+    cumsum_switch_off = torch.cumsum(switch_off, dim=-1)  # (B, G, T)
 
-        # off_windows: (B, ng, T-D+1, D)
-        off_windows = (1.0 - u_g).unfold(dimension=2, size=Dval, step=1)
-        off_sum = off_windows.sum(dim=-1)  # (B, ng, T-D+1)
+    V = torch.cat(
+        [torch.zeros((B, G, 1), device=device, dtype=dtype), cumsum_switch_off], dim=-1
+    )  # (B, G, T+1) adds a leading 0 so prefix sum at -1 is 0
+    D_exp = D.view(1, G, 1)  # (1, G, 1)
+    idx = (t_idx - D_exp + 1).clamp(
+        min=0, max=T
+    )  # index where the rolling window starts, + 1 because of the leading 0 in V
 
-        # violation amount at each potential shutdown time
-        v = F.relu(Dval - off_sum).to(dtype)  # (B, ng, T-D+1)
+    V_shifted = V.gather(dim=-1, index=idx.expand(B, G, T))
 
-        # apply only where shutdown actually occurs (valid times t=0..T-D)
-        sw_valid = sw_g[:, :, : T - Dval + 1].to(dtype)  # (B, ng, T-D+1)
-        violations[:, gens, : T - Dval + 1] += sw_valid * v
+    window_sum = cumsum_switch_off - V_shifted  # (B, G, T)
+
+    violations = F.relu(window_sum - (1 - is_on))  # (B, G, T)
 
     return violations
 

@@ -45,8 +45,8 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
         is_discharging = outputs_dict["is_discharging"]  # TODO: check dims
 
         ## Apply rounding if specified
-        outputs_dict["thermal_on_rounded"] = ste_round(
-            outputs_dict["thermal_on"]
+        outputs_dict["is_on_rounded"] = ste_round(
+            outputs_dict["is_on"]
         )  # TODO: check dims
 
         ## Solve LP
@@ -54,11 +54,12 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
         load = features["profiles"][:, :, 0]
         solar_max = features["profiles"][:, :, 2].unsqueeze(1)
         wind_max = features["profiles"][:, :, 1].unsqueeze(1)
+        print("Solving LP")
         ed_solution = ed_layer(
             load,
             solar_max,
             wind_max,
-            outputs_dict["thermal_on_rounded"],
+            outputs_dict["is_on_rounded"],
             is_charging,
             is_discharging,
             # solver_args={"verbose": True},
@@ -67,11 +68,13 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
         ## Compute loss
         initial_commitment = features["initial_conditions"][:, :, -1] > 0
         initial_status = features["initial_conditions"][:, :, -1]
+        print("Computing Loss")
         loss = criterion(
             ed_solution, outputs_dict, targets, initial_status, initial_commitment
         )
 
         ### Backward pass
+        print("backproping")
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

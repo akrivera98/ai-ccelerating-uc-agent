@@ -69,7 +69,7 @@ class SimpleDataset(Dataset):
         return {
             "features": {"profiles": profiles, "initial_conditions": init_conds},
             "target": {
-                "thermal_commitment": y,
+                "is_on": y,
                 "is_charging": is_charging,
                 "is_discharging": is_discharging,
             },
