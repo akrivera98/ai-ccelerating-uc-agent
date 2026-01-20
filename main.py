@@ -1,6 +1,7 @@
 import argparse
 from datetime import datetime
 import os
+import juliacall
 import torch
 from tqdm import tqdm
 import yaml
@@ -11,7 +12,7 @@ from src.models.round import ste_round
 import src.utils.losses as losses
 from src.models.ed_model import UCModel
 from src.models.data_classes import create_data_dict
-
+import ipdb
 
 class Config:
     def __init__(self, cfg_dict):
@@ -30,12 +31,14 @@ def load_config(config_path: str) -> Config:
     return Config(raw_cfg)
 
 
-def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
+def train_epoch(model, ed_layer, dataloader, criterion, optimizer, device=torch.device("cpu")):
     model.train()
     total_loss = 0
     for batch in tqdm(dataloader):
-        features = batch["features"]
-        targets = batch["target"]
+
+        features = {k: v.to(device) for k, v in batch["features"].items()}
+        targets = {k: v.to(device) for k, v in batch["target"].items()} if isinstance(batch["target"], dict) else batch["target"].to(device)
+
 
         ### Forward pass
 
@@ -51,10 +54,9 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
 
         ## Solve LP
         ### Solve ED problem given commitments and features
-        load = features["profiles"][:, :, 0]
-        solar_max = features["profiles"][:, :, 2].unsqueeze(1)
-        wind_max = features["profiles"][:, :, 1].unsqueeze(1)
-        print("Solving LP")
+        load = features["profiles"][:, :, 0].to(device)
+        solar_max = features["profiles"][:, :, 2].unsqueeze(1).to(device)
+        wind_max = features["profiles"][:, :, 1].unsqueeze(1).to(device)
         ed_solution = ed_layer(
             load,
             solar_max,
@@ -62,19 +64,17 @@ def train_epoch(model, ed_layer, dataloader, criterion, optimizer):
             outputs_dict["is_on_rounded"],
             is_charging,
             is_discharging,
-            # solver_args={"verbose": True},
+            solver_args={"max_iters": 5000},
         )
 
         ## Compute loss
         initial_commitment = features["initial_conditions"][:, :, -1] > 0
         initial_status = features["initial_conditions"][:, :, -1]
-        print("Computing Loss")
         loss = criterion(
             ed_solution, outputs_dict, targets, initial_status, initial_commitment
         )
 
         ### Backward pass
-        print("backproping")
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -107,8 +107,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+
     # Load config file
     cfg = load_config(args.config)
+
+    # Set up device
+    device = torch.device("cuda" if (torch.cuda.is_available() and cfg.device == "cuda") else "cpu")
+    print(f"Using device: {device}")
+
+    # Set up cvxpylayers
+    backend = cfg.backend
+    solver = cfg.solver
 
     # Set seeds for reproducibility
     seed = cfg.seed
@@ -139,11 +148,11 @@ def main() -> None:
     # Instantiate model
     model_name = cfg.model.name
     ModelClass = getattr(models, model_name)
-    model = ModelClass(**cfg.model.hyper_params.__dict__)
+    model = ModelClass(**cfg.model.hyper_params.__dict__).to(device)
 
     # Instantiate ED layer
     ed_data_dict = create_data_dict(cfg.dataset.ed_instance_path)
-    ed_layer = UCModel(ed_data_dict).build_layer()
+    ed_layer = UCModel(ed_data_dict).build_layer(device=device, backend=backend, solver=solver)
 
     # Loss and optimizer
     criterion = getattr(losses, cfg.training.criterion)(ed_data_dict)
@@ -158,7 +167,7 @@ def main() -> None:
 
     for epoch in range(cfg.training.num_epochs):
         print(f"Epoch {epoch + 1}/{cfg.training.num_epochs}")
-        train_loss = train_epoch(model, ed_layer, train_loader, criterion, optimizer)
+        train_loss = train_epoch(model, ed_layer, train_loader, criterion, optimizer, device=device)
         train_losses.append(train_loss)
 
         # Validate only every val_every epochs, and always on the last one

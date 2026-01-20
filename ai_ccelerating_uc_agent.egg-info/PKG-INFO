@@ -2,7 +2,7 @@ Metadata-Version: 2.4
 Name: ai-ccelerating-uc-agent
 Version: 0.1.0
 Summary: Add your description here
-Requires-Python: ==3.10
+Requires-Python: ==3.12.*
 Description-Content-Type: text/markdown
 Requires-Dist: dill==0.4.0
 Requires-Dist: ipdb>=0.13.13
@@ -12,3 +12,7 @@ Requires-Dist: pandas==2.3.3
 Requires-Dist: pyyaml==6.0.3
 Requires-Dist: torch==2.9.1
 Requires-Dist: tqdm>=4.67.1
+Requires-Dist: cvxpylayers@ git+https://github.com/cvxpy/cvxpylayers.git
+Requires-Dist: juliacall>=0.9.31
+Requires-Dist: diffqcp>=0.4.4
+Requires-Dist: lineax

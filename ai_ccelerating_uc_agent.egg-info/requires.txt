@@ -6,3 +6,7 @@ pandas==2.3.3
 pyyaml==6.0.3
 torch==2.9.1
 tqdm>=4.67.1
+cvxpylayers@ git+https://github.com/cvxpy/cvxpylayers.git
+juliacall>=0.9.31
+diffqcp>=0.4.4
+lineax

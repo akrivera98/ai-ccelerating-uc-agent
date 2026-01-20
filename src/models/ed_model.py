@@ -6,6 +6,8 @@ from src.models.components import (
     StorageUnitsComponent,
     ThermalGeneratorsComponent,
 )
+from cvxpylayers.jax import CvxpyLayer as JaxCvxpyLayer
+
 
 
 class UCModel:
@@ -63,7 +65,7 @@ class UCModel:
         # 5. Build the CVXPY problem
         self.problem = cp.Problem(self.objective, self.constraints)
 
-    def build_layer(self):
+    def build_layer(self, backend="torch", device="cpu", solver="DIFFCP"):
         if self.problem is None:
             self.build()
 
@@ -76,12 +78,24 @@ class UCModel:
             self.storage_units.is_discharging,
         ]
 
-        self.cvxpy_layer = CvxpyLayer(
-            self.problem,
-            parameters=params_list,
-            variables=list(self.variables.values()),
-        )
-        return self.cvxpy_layer
+        backend = backend.lower()
+        if backend == "torch":
+            self.cvxpy_layer = CvxpyLayer(
+                self.problem,
+                parameters=params_list,
+                variables=list(self.variables.values()),
+                solver=solver,
+            ).to(device)
+            return self.cvxpy_layer
+
+        elif backend == "jax":
+            self.cvxpy_layer = JaxCvxpyLayer(
+                self.problem,
+                parameters=params_list,
+                variables=list(self.variables.values()),
+                solver=cp.CUCLARABEL,
+            )
+            return self.cvxpy_layer
 
     def solve(self, **kwargs):
         if self.problem is None:
