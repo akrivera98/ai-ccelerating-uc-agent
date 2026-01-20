@@ -103,20 +103,19 @@ class SimpleDataset(Dataset):
         storage_names = sorted(charging_dict.keys())
         S = len(charging_dict)
         T = 72
+        EPS = 1e-3  # small threshold to determine if charging/discharging
 
         is_charging = torch.zeros((S, T), dtype=torch.float32)
         is_discharging = torch.zeros((S, T), dtype=torch.float32)
 
         for i, s_name in enumerate(storage_names):
-            rates = charging_dict[s_name]
-            rates_tensor = torch.tensor(rates, dtype=torch.float32)
-            is_charging[i, :] = (rates_tensor > 0).double()
+            charge_rates = torch.tensor(charging_dict[s_name], dtype=torch.float32)
+            discharge_rates = torch.tensor(
+                discharging_dict[s_name], dtype=torch.float32
+            )
 
-        for i, s_name in enumerate(storage_names):
-            rates = discharging_dict[s_name]
-            rates_tensor = torch.tensor(rates, dtype=torch.float32)
-            is_discharging[i, :] = (rates_tensor > 0).double()
-
+            is_charging[i, :] = (charge_rates > EPS).float()
+            is_discharging[i, :] = (discharge_rates > EPS).float()
         assert torch.all(is_charging * is_discharging == 0), (
             "Storage units cannot charge and discharge simultaneously."
         )
