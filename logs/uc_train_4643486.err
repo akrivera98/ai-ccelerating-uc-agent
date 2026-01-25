@@ -1,134 +1,0 @@
-/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
-This use of ``*`` has resulted in matrix multiplication.
-Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
-    Use ``*`` for matrix-scalar and vector-scalar multiplication.
-    Use ``@`` for matrix-matrix and matrix-vector multiplication.
-    Use ``multiply`` for elementwise multiplication.
-This code path has been hit 1 times so far.
-
-  warnings.warn(msg, UserWarning)
-/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
-This use of ``*`` has resulted in matrix multiplication.
-Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
-    Use ``*`` for matrix-scalar and vector-scalar multiplication.
-    Use ``@`` for matrix-matrix and matrix-vector multiplication.
-    Use ``multiply`` for elementwise multiplication.
-This code path has been hit 2 times so far.
-
-  warnings.warn(msg, UserWarning)
-/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
-This use of ``*`` has resulted in matrix multiplication.
-Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
-    Use ``*`` for matrix-scalar and vector-scalar multiplication.
-    Use ``@`` for matrix-matrix and matrix-vector multiplication.
-    Use ``multiply`` for elementwise multiplication.
-This code path has been hit 3 times so far.
-
-  warnings.warn(msg, UserWarning)
-/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/reductions/solvers/solving_chain_utils.py:30: UserWarning: The problem includes expressions that don't support CPP backend. Defaulting to the SCIPY backend for canonicalization.
-  warnings.warn(UserWarning(
-/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpylayers/torch/cvxpylayer.py:424: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
-  torch_csr = torch.sparse_csr_tensor(
-  0%|          | 0/58 [00:00<?, ?it/s]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
-  2%|▏         | 1/58 [08:04<7:40:06, 484.32s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
-  3%|▎         | 2/58 [15:19<7:04:58, 455.32s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
-  5%|▌         | 3/58 [21:22<6:18:46, 413.20s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
-  7%|▋         | 4/58 [27:13<5:49:51, 388.73s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
-  9%|▊         | 5/58 [33:40<5:42:54, 388.19s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 10%|█         | 6/58 [39:44<5:29:05, 379.73s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 12%|█▏        | 7/58 [44:14<4:52:14, 343.82s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 14%|█▍        | 8/58 [48:15<4:19:13, 311.07s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 16%|█▌        | 9/58 [51:16<3:40:51, 270.45s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 17%|█▋        | 10/58 [54:31<3:17:41, 247.12s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 19%|█▉        | 11/58 [57:09<2:52:16, 219.92s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 21%|██        | 12/58 [59:51<2:35:15, 202.51s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 22%|██▏       | 13/58 [1:02:27<2:21:10, 188.22s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 24%|██▍       | 14/58 [1:04:35<2:04:45, 170.13s/it] 26%|██▌       | 15/58 [1:06:31<1:50:11, 153.75s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 28%|██▊       | 16/58 [1:08:48<1:44:06, 148.72s/it] 29%|██▉       | 17/58 [1:10:49<1:35:53, 140.32s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 31%|███       | 18/58 [1:12:59<1:31:34, 137.36s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 33%|███▎      | 19/58 [1:15:00<1:26:03, 132.39s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 34%|███▍      | 20/58 [1:17:43<1:29:38, 141.55s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 36%|███▌      | 21/58 [1:20:02<1:26:55, 140.95s/it] 38%|███▊      | 22/58 [1:21:34<1:15:35, 126.00s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 40%|███▉      | 23/58 [1:24:20<1:20:34, 138.13s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 41%|████▏     | 24/58 [1:26:33<1:17:18, 136.44s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 43%|████▎     | 25/58 [1:28:27<1:11:29, 130.00s/it] 45%|████▍     | 26/58 [1:29:58<1:02:58, 118.07s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 47%|████▋     | 27/58 [1:32:09<1:03:04, 122.08s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 48%|████▊     | 28/58 [1:34:07<1:00:20, 120.69s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 50%|█████     | 29/58 [1:36:08<58:22, 120.79s/it]  /mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 52%|█████▏    | 30/58 [1:38:15<57:17, 122.76s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 53%|█████▎    | 31/58 [1:40:28<56:34, 125.70s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 55%|█████▌    | 32/58 [1:42:30<54:01, 124.68s/it] 57%|█████▋    | 33/58 [1:44:00<47:40, 114.43s/it] 59%|█████▊    | 34/58 [1:45:20<41:32, 103.86s/it] 60%|██████    | 35/58 [1:46:44<37:35, 98.08s/it] /mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 62%|██████▏   | 36/58 [1:48:50<39:01, 106.42s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 64%|██████▍   | 37/58 [1:51:06<40:19, 115.21s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 66%|██████▌   | 38/58 [1:53:12<39:32, 118.64s/it] 67%|██████▋   | 39/58 [1:54:42<34:49, 109.98s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 69%|██████▉   | 40/58 [1:56:51<34:38, 115.49s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 71%|███████   | 41/58 [1:58:55<33:30, 118.25s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
-  warnings.warn("Solved/Inaccurate.")
- 72%|███████▏  | 42/58 [2:00:54<31:34, 118.41s/it] 74%|███████▍  | 43/58 [2:02:21<27:15, 109.06s/it] 76%|███████▌  | 44/58 [2:03:37<23:06, 99.02s/it]  76%|███████▌  | 44/58 [2:03:40<39:20, 168.64s/it]
-Traceback (most recent call last):
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/main.py", line 236, in <module>
-    main()
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/main.py", line 170, in main
-    train_loss = train_epoch(model, ed_layer, train_loader, criterion, optimizer, device=device)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/main.py", line 37, in train_epoch
-    for batch in tqdm(dataloader):
-                 ^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/tqdm/std.py", line 1181, in __iter__
-    for obj in iterable:
-               ^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 732, in __next__
-    data = self._next_data()
-           ^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 788, in _next_data
-    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py", line 50, in fetch
-    data = self.dataset.__getitems__(possibly_batched_index)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/torch/utils/data/dataset.py", line 416, in __getitems__
-    return [self.dataset[self.indices[idx]] for idx in indices]
-            ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/src/datasets/simple_dataset.py", line 82, in __getitem__
-    sample = self._load_file(path_features, path_targets, path_output_gz)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/src/datasets/simple_dataset.py", line 31, in _load_file
-    is_charging, is_discharging = self._get_storage_decisions_from_gz(path_gz)
-                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/mnt/home/akrivera/ai-ccelerating-uc-agent/src/datasets/simple_dataset.py", line 120, in _get_storage_decisions_from_gz
-    assert torch.all(is_charging * is_discharging == 0), (
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError: Storage units cannot charge and discharge simultaneously.

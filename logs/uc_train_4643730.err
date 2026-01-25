@@ -1,0 +1,100 @@
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 1 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 2 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 3 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/reductions/solvers/solving_chain_utils.py:30: UserWarning: The problem includes expressions that don't support CPP backend. Defaulting to the SCIPY backend for canonicalization.
+  warnings.warn(UserWarning(
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpylayers/torch/cvxpylayer.py:424: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
+  torch_csr = torch.sparse_csr_tensor(
+  0%|          | 0/29 [00:00<?, ?it/s]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+  3%|▎         | 1/29 [55:50<26:03:24, 3350.15s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+  7%|▋         | 2/29 [1:41:18<22:23:01, 2984.50s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 10%|█         | 3/29 [2:21:20<19:37:58, 2718.42s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 14%|█▍        | 4/29 [2:52:34<16:33:44, 2384.99s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 17%|█▋        | 5/29 [3:14:30<13:19:45, 1999.40s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 21%|██        | 6/29 [3:31:00<10:34:59, 1656.49s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 24%|██▍       | 7/29 [3:46:34<8:40:42, 1420.14s/it] /mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 28%|██▊       | 8/29 [4:00:29<7:11:50, 1233.81s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 31%|███       | 9/29 [4:11:59<5:54:37, 1063.86s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 34%|███▍      | 10/29 [4:25:56<5:14:40, 993.73s/it] 38%|███▊      | 11/29 [4:37:09<4:28:39, 895.55s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 41%|████▏     | 12/29 [4:50:26<4:05:18, 865.79s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 45%|████▍     | 13/29 [5:01:13<3:33:12, 799.51s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 48%|████▊     | 14/29 [5:15:04<3:22:15, 809.00s/it] 52%|█████▏    | 15/29 [5:24:15<2:50:34, 731.04s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 55%|█████▌    | 16/29 [5:34:32<2:30:59, 696.90s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 59%|█████▊    | 17/29 [5:43:26<2:09:33, 647.77s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 62%|██████▏   | 18/29 [5:52:53<1:54:19, 623.60s/it] 66%|██████▌   | 19/29 [6:01:51<1:39:38, 597.87s/it] 69%|██████▉   | 20/29 [6:11:00<1:27:29, 583.27s/it] 72%|███████▏  | 21/29 [6:21:26<1:19:28, 596.04s/it] 76%|███████▌  | 22/29 [6:29:21<1:05:18, 559.83s/it] 79%|███████▉  | 23/29 [6:38:33<55:44, 557.47s/it]   83%|████████▎ | 24/29 [6:47:33<46:01, 552.25s/it] 86%|████████▌ | 25/29 [6:55:57<35:50, 537.62s/it] 90%|████████▉ | 26/29 [7:04:34<26:34, 531.37s/it] 93%|█████████▎| 27/29 [7:13:14<17:36, 528.17s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 97%|█████████▋| 28/29 [7:24:58<09:40, 580.72s/it]100%|██████████| 29/29 [7:30:21<00:00, 503.55s/it]100%|██████████| 29/29 [7:30:21<00:00, 931.79s/it]
+  0%|          | 0/29 [00:00<?, ?it/s]  3%|▎         | 1/29 [09:09<4:16:24, 549.46s/it]  7%|▋         | 2/29 [19:34<4:27:18, 594.00s/it] 10%|█         | 3/29 [29:05<4:12:44, 583.27s/it] 14%|█▍        | 4/29 [38:34<4:00:44, 577.79s/it] 17%|█▋        | 5/29 [44:40<3:20:33, 501.39s/it] 21%|██        | 6/29 [51:05<2:57:03, 461.89s/it] 24%|██▍       | 7/29 [58:23<2:46:30, 454.10s/it] 28%|██▊       | 8/29 [1:04:11<2:27:06, 420.30s/it] 31%|███       | 9/29 [1:10:07<2:13:23, 400.18s/it] 34%|███▍      | 10/29 [1:18:28<2:16:35, 431.34s/it] 38%|███▊      | 11/29 [1:25:31<2:08:37, 428.74s/it] 41%|████▏     | 12/29 [1:32:43<2:01:45, 429.72s/it] 45%|████▍     | 13/29 [1:39:42<1:53:44, 426.53s/it] 48%|████▊     | 14/29 [1:45:58<1:42:47, 411.17s/it] 52%|█████▏    | 15/29 [1:53:49<1:40:09, 429.23s/it] 55%|█████▌    | 16/29 [2:00:18<1:30:24, 417.28s/it] 59%|█████▊    | 17/29 [2:08:27<1:27:45, 438.77s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 62%|██████▏   | 18/29 [2:17:18<1:25:30, 466.45s/it] 66%|██████▌   | 19/29 [2:23:39<1:13:26, 440.61s/it] 69%|██████▉   | 20/29 [2:29:33<1:02:12, 414.70s/it] 72%|███████▏  | 21/29 [2:35:11<52:14, 391.87s/it]  /mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 76%|███████▌  | 22/29 [2:42:42<47:46, 409.53s/it] 79%|███████▉  | 23/29 [2:48:28<39:03, 390.55s/it] 83%|████████▎ | 24/29 [2:54:19<31:32, 378.60s/it] 86%|████████▌ | 25/29 [3:00:40<25:17, 379.40s/it] 90%|████████▉ | 26/29 [3:07:27<19:22, 387.50s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 93%|█████████▎| 27/29 [3:14:21<13:10, 395.48s/it] 97%|█████████▋| 28/29 [3:19:53<06:16, 376.34s/it]100%|██████████| 29/29 [3:24:40<00:00, 349.75s/it]100%|██████████| 29/29 [3:24:40<00:00, 423.48s/it]
+  0%|          | 0/29 [00:00<?, ?it/s]  3%|▎         | 1/29 [06:48<3:10:47, 408.83s/it]  7%|▋         | 2/29 [12:55<2:52:45, 383.90s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 10%|█         | 3/29 [20:16<2:57:43, 410.13s/it] 14%|█▍        | 4/29 [26:26<2:44:16, 394.24s/it] 17%|█▋        | 5/29 [33:44<2:43:59, 409.97s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 21%|██        | 6/29 [41:45<2:46:28, 434.28s/it] 24%|██▍       | 7/29 [47:53<2:31:11, 412.35s/it] 28%|██▊       | 8/29 [53:39<2:16:56, 391.27s/it] 31%|███       | 9/29 [59:31<2:06:23, 379.18s/it] 34%|███▍      | 10/29 [1:05:23<1:57:25, 370.83s/it] 38%|███▊      | 11/29 [1:11:53<1:52:56, 376.49s/it] 41%|████▏     | 12/29 [1:17:41<1:44:16, 368.02s/it] 45%|████▍     | 13/29 [1:23:35<1:36:59, 363.71s/it] 48%|████▊     | 14/29 [1:29:49<1:31:40, 366.72s/it] 52%|█████▏    | 15/29 [1:36:16<1:26:59, 372.79s/it] 55%|█████▌    | 16/29 [1:42:39<1:21:28, 376.01s/it] 59%|█████▊    | 17/29 [1:49:07<1:15:55, 379.60s/it] 62%|██████▏   | 18/29 [1:55:11<1:08:43, 374.91s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 66%|██████▌   | 19/29 [2:02:10<1:04:42, 388.25s/it] 69%|██████▉   | 20/29 [2:08:36<58:07, 387.50s/it]   72%|███████▏  | 21/29 [2:14:55<51:19, 384.95s/it] 76%|███████▌  | 22/29 [2:21:00<44:12, 378.88s/it] 79%|███████▉  | 23/29 [2:27:34<38:19, 383.29s/it] 83%|████████▎ | 24/29 [2:34:27<32:41, 392.39s/it] 86%|████████▌ | 25/29 [2:40:41<25:47, 386.81s/it] 90%|████████▉ | 26/29 [2:46:34<18:50, 376.77s/it] 93%|█████████▎| 27/29 [2:53:00<12:38, 379.33s/it] 97%|█████████▋| 28/29 [2:59:01<06:14, 374.03s/it]100%|██████████| 29/29 [3:03:27<00:00, 341.49s/it]100%|██████████| 29/29 [3:03:27<00:00, 379.56s/it]
+  0%|          | 0/29 [00:00<?, ?it/s]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+  3%|▎         | 1/29 [07:00<3:16:21, 420.75s/it]  7%|▋         | 2/29 [13:05<2:54:26, 387.65s/it] 10%|█         | 3/29 [19:03<2:42:14, 374.39s/it] 14%|█▍        | 4/29 [25:03<2:33:29, 368.39s/it] 17%|█▋        | 5/29 [31:51<2:33:11, 382.99s/it] 21%|██        | 6/29 [37:14<2:18:53, 362.33s/it] 24%|██▍       | 7/29 [43:51<2:17:04, 373.85s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 28%|██▊       | 8/29 [50:27<2:13:20, 380.96s/it] 31%|███       | 9/29 [55:54<2:01:20, 364.04s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 34%|███▍      | 10/29 [1:02:48<2:00:11, 379.53s/it] 38%|███▊      | 11/29 [1:08:14<1:48:55, 363.09s/it] 41%|████▏     | 12/29 [1:13:45<1:40:05, 353.28s/it] 45%|████▍     | 13/29 [1:20:00<1:35:55, 359.75s/it] 48%|████▊     | 14/29 [1:25:45<1:28:49, 355.33s/it] 52%|█████▏    | 15/29 [1:31:48<1:23:26, 357.58s/it] 55%|█████▌    | 16/29 [1:38:01<1:18:31, 362.44s/it] 59%|█████▊    | 17/29 [1:43:39<1:11:00, 355.02s/it] 62%|██████▏   | 18/29 [1:49:14<1:04:00, 349.09s/it] 66%|██████▌   | 19/29 [1:55:11<58:32, 351.26s/it]   69%|██████▉   | 20/29 [2:00:48<52:03, 347.06s/it] 72%|███████▏  | 21/29 [2:06:41<46:30, 348.78s/it] 76%|███████▌  | 22/29 [2:11:56<39:31, 338.78s/it] 79%|███████▉  | 23/29 [2:17:28<33:39, 336.56s/it] 83%|████████▎ | 24/29 [2:23:54<29:18, 351.64s/it] 86%|████████▌ | 25/29 [2:30:36<24:26, 366.51s/it] 90%|████████▉ | 26/29 [2:37:00<18:35, 371.87s/it] 93%|█████████▎| 27/29 [2:42:48<12:09, 364.59s/it] 97%|█████████▋| 28/29 [2:48:39<06:00, 360.72s/it]100%|██████████| 29/29 [2:52:08<00:00, 315.15s/it]100%|██████████| 29/29 [2:52:08<00:00, 356.16s/it]
+  0%|          | 0/29 [00:00<?, ?it/s]  3%|▎         | 1/29 [06:09<2:52:35, 369.83s/it]  7%|▋         | 2/29 [12:59<2:56:51, 393.01s/it] 10%|█         | 3/29 [18:47<2:41:28, 372.62s/it] 14%|█▍        | 4/29 [24:35<2:31:15, 363.04s/it] 17%|█▋        | 5/29 [30:40<2:25:25, 363.55s/it] 21%|██        | 6/29 [36:56<2:20:58, 367.75s/it] 24%|██▍       | 7/29 [42:55<2:13:52, 365.13s/it] 28%|██▊       | 8/29 [48:55<2:07:13, 363.49s/it] 31%|███       | 9/29 [55:41<2:05:34, 376.72s/it] 34%|███▍      | 10/29 [1:02:03<1:59:49, 378.38s/it] 38%|███▊      | 11/29 [1:08:36<1:54:51, 382.86s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 41%|████▏     | 12/29 [1:16:56<1:58:33, 418.43s/it] 45%|████▍     | 13/29 [1:22:57<1:46:54, 400.90s/it] 48%|████▊     | 14/29 [1:28:45<1:36:13, 384.89s/it] 52%|█████▏    | 15/29 [1:35:13<1:30:03, 386.00s/it] 55%|█████▌    | 16/29 [1:41:42<1:23:50, 386.93s/it] 59%|█████▊    | 17/29 [1:48:26<1:18:24, 392.00s/it] 62%|██████▏   | 18/29 [1:55:49<1:14:42, 407.46s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 66%|██████▌   | 19/29 [2:04:16<1:12:51, 437.13s/it] 69%|██████▉   | 20/29 [2:11:44<1:06:04, 440.53s/it] 72%|███████▏  | 21/29 [2:18:59<58:29, 438.74s/it]   76%|███████▌  | 22/29 [2:26:19<51:13, 439.08s/it] 79%|███████▉  | 23/29 [2:33:33<43:46, 437.78s/it] 83%|████████▎ | 24/29 [2:41:24<37:18, 447.65s/it] 86%|████████▌ | 25/29 [2:48:52<29:51, 447.89s/it] 90%|████████▉ | 26/29 [2:56:10<22:14, 444.86s/it] 93%|█████████▎| 27/29 [3:03:34<14:49, 444.62s/it] 97%|█████████▋| 28/29 [3:10:37<07:18, 438.07s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+100%|██████████| 29/29 [3:17:53<00:00, 437.43s/it]100%|██████████| 29/29 [3:17:53<00:00, 409.43s/it]
+  0%|          | 0/29 [00:00<?, ?it/s]  3%|▎         | 1/29 [07:28<3:29:10, 448.24s/it]  7%|▋         | 2/29 [15:35<3:32:01, 471.16s/it] 10%|█         | 3/29 [22:56<3:18:14, 457.48s/it] 14%|█▍        | 4/29 [30:30<3:09:57, 455.88s/it] 17%|█▋        | 5/29 [38:05<3:02:13, 455.57s/it] 21%|██        | 6/29 [46:24<3:00:19, 470.39s/it] 24%|██▍       | 7/29 [54:28<2:54:05, 474.82s/it] 28%|██▊       | 8/29 [1:02:55<2:49:46, 485.08s/it] 31%|███       | 9/29 [1:11:50<2:46:53, 500.66s/it] 34%|███▍      | 10/29 [1:20:43<2:41:43, 510.70s/it] 38%|███▊      | 11/29 [1:29:40<2:35:37, 518.78s/it] 41%|████▏     | 12/29 [1:39:06<2:31:06, 533.32s/it] 45%|████▍     | 13/29 [1:48:14<2:23:21, 537.60s/it] 48%|████▊     | 14/29 [1:56:34<2:11:33, 526.20s/it] 52%|█████▏    | 15/29 [2:02:16<1:49:50, 470.78s/it] 55%|█████▌    | 16/29 [2:07:44<1:32:42, 427.86s/it] 59%|█████▊    | 17/29 [2:13:16<1:19:47, 398.97s/it]/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+ 62%|██████▏   | 18/29 [2:20:19<1:14:27, 406.13s/it] 66%|██████▌   | 19/29 [2:26:46<1:06:43, 400.30s/it] 69%|██████▉   | 20/29 [2:32:45<58:13, 388.13s/it]   72%|███████▏  | 21/29 [2:38:19<49:35, 371.88s/it] 76%|███████▌  | 22/29 [2:44:15<42:48, 366.91s/it] 79%|███████▉  | 23/29 [2:50:07<36:15, 362.59s/it] 83%|████████▎ | 24/29 [2:55:40<29:28, 353.69s/it] 86%|████████▌ | 25/29 [3:01:23<23:22, 350.52s/it] 90%|████████▉ | 26/29 [3:06:42<17:02, 340.97s/it] 93%|█████████▎| 27/29 [3:12:20<11:20, 340.23s/it] 97%|█████████▋| 28/29 [3:18:12<05:43, 343.66s/it]100%|██████████| 29/29 [3:21:50<00:00, 305.78s/it]100%|██████████| 29/29 [3:21:50<00:00, 417.59s/it]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+  0%|          | 0/29 [00:00<?, ?it/s]  3%|▎         | 1/29 [05:44<2:40:35, 344.12s/it]  7%|▋         | 2/29 [11:54<2:41:48, 359.57s/it] 10%|█         | 3/29 [17:40<2:33:03, 353.19s/it] 14%|█▍        | 4/29 [23:16<2:24:26, 346.68s/it] 17%|█▋        | 5/29 [28:55<2:17:32, 343.86s/it]slurmstepd: error: *** STEP 4643730.0 ON node14 CANCELLED AT 2026-01-21T21:18:42 DUE TO TIME LIMIT ***
+slurmstepd: error: *** JOB 4643730 ON node14 CANCELLED AT 2026-01-21T21:18:42 DUE TO TIME LIMIT ***

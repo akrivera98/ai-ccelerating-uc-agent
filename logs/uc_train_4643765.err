@@ -1,0 +1,61 @@
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 1 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 2 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/expressions/expression.py:683: UserWarning: 
+This use of ``*`` has resulted in matrix multiplication.
+Using ``*`` for matrix multiplication has been deprecated since CVXPY 1.1.
+    Use ``*`` for matrix-scalar and vector-scalar multiplication.
+    Use ``@`` for matrix-matrix and matrix-vector multiplication.
+    Use ``multiply`` for elementwise multiplication.
+This code path has been hit 3 times so far.
+
+  warnings.warn(msg, UserWarning)
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpy/reductions/solvers/solving_chain_utils.py:30: UserWarning: The problem includes expressions that don't support CPP backend. Defaulting to the SCIPY backend for canonicalization.
+  warnings.warn(UserWarning(
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/cvxpylayers/torch/cvxpylayer.py:424: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
+  torch_csr = torch.sparse_csr_tensor(
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")
+/mnt/home/akrivera/ai-ccelerating-uc-agent/.venv/lib/python3.12/site-packages/diffcp/cone_program.py:408: UserWarning: Solved/Inaccurate.
+  warnings.warn("Solved/Inaccurate.")

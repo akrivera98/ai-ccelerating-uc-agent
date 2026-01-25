@@ -1,0 +1,14 @@
+Using device: cpu
+Epoch 1/10
+Epoch 1/10 - train_loss: 1245972467.6647
+Epoch 2/10
+Epoch 2/10 - train_loss: 382524628.5513
+Epoch 3/10
+Epoch 3/10 - train_loss: 367258060.1100
+Epoch 4/10
+Epoch 4/10 - train_loss: 359900626.7647
+Epoch 5/10
+Epoch 5/10 - train_loss: 355168936.8534
+Epoch 6/10
+Epoch 6/10 - train_loss: 348494009.5489
+Epoch 7/10

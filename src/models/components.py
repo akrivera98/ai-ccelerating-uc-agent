@@ -322,8 +322,6 @@ class ThermalGeneratorsComponent(UCComponent):
         # Segment costs
         segment_costs = cp.sum(cp.multiply(self.segprod, self.segment_cost))
 
-        # why do you have both turn_on_costs and segment_costs?
-
         return turn_on_costs + segment_costs
 
     def _build_segment_mw_cost(self, curves, max_segments):

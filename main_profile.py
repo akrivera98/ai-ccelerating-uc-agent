@@ -13,6 +13,14 @@ import src.utils.losses as losses
 from src.models.ed_model import UCModel
 from src.models.data_classes import create_data_dict
 import ipdb
+from src.utils.profiling import benchmark_batchsize_sweep, format_sweep_results
+from torch.utils.data import Subset
+
+MAX_BS = 64
+WARMUP = 3
+STEPS = 3
+
+needed = MAX_BS * (WARMUP + STEPS)
 
 class Config:
     def __init__(self, cfg_dict):
@@ -140,10 +148,9 @@ def main() -> None:
     )
 
     train_loader = DataLoader(
-        train_ds, batch_size=cfg.training.batch_size, shuffle=True
+        train_ds, batch_size=cfg.training.batch_size, shuffle=True, drop_last=True
     )
     val_loader = DataLoader(val_ds, batch_size=cfg.training.batch_size, shuffle=False)
-    test_loader = DataLoader(test_ds, batch_size=cfg.training.batch_size, shuffle=False)
 
     # Instantiate model
     model_name = cfg.model.name
@@ -163,74 +170,21 @@ def main() -> None:
     train_losses = []
     val_losses = []  # store (epoch, val_loss)
 
-    val_every = getattr(cfg.training, "val_every", 5)
-
-    for epoch in range(cfg.training.num_epochs):
-        print(f"Epoch {epoch + 1}/{cfg.training.num_epochs}")
-        train_loss = train_epoch(model, ed_layer, train_loader, criterion, optimizer, device=device)
-        train_losses.append(train_loss)
-
-        # Validate only every val_every epochs, and always on the last one
-        # do_val = ((epoch + 1) % val_every == 0) or (
-        #     epoch + 1 == cfg.training.num_epochs
-        # )
-        do_val = False
-
-        if do_val: # This is currently broken because of ed_solution being a dict.
-            val_loss = eval_epoch(model, val_loader, criterion)
-            val_losses.append((epoch + 1, val_loss))
-            print(
-                f"Epoch {epoch + 1}/{cfg.training.num_epochs} "
-                f"- train_loss: {train_loss:.4f} | val_loss: {val_loss:.4f}"
-            )
-        else:
-            print(
-                f"Epoch {epoch + 1}/{cfg.training.num_epochs} "
-                f"- train_loss: {train_loss:.4f}"
-            )
-
-    # Save path
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    base_save_path = "results/"
-    os.makedirs(
-        os.path.join(base_save_path, cfg.experiment_name, timestamp), exist_ok=True
+    results = benchmark_batchsize_sweep(
+        model=model,
+        ed_layer=ed_layer,
+        dataset=dataset,
+        criterion=criterion,
+        device=device,
+        ste_round_fn=ste_round,
+        batch_sizes=[1, 2, 4, 8],
+        steps=3,          # spread over 3 measured steps
+        warmup=3,         # ignore warmup
+        solver_args={"max_iters": 10000},
+        drop_last=True,
     )
 
-    # Save the model weights
-    weights_save_path = os.path.join(
-        base_save_path, cfg.experiment_name, timestamp, "simple_mlp_state.pt"
-    )
-    torch.save(model.state_dict(), weights_save_path)
-    print(f"Model saved to {weights_save_path}")
-
-    # Save the whole mdoel
-    model_save_path = os.path.join(
-        base_save_path, cfg.experiment_name, timestamp, "simple_mlp_model.pt"
-    )
-    torch.save(model, model_save_path)
-
-    # Save losses
-    loss_path = os.path.join(
-        base_save_path, cfg.experiment_name, timestamp, "losses.pt"
-    )
-    torch.save({"train_losses": train_losses, "val_losses": val_losses}, loss_path)
-    print(f"Losses saved to {loss_path}")
-
-    # Save test indices # TODO: figure out some other way to do this later.
-    test_indices_path = os.path.join(
-        base_save_path, cfg.experiment_name, timestamp, "test_indices.pt"
-    )
-    torch.save(test_ds.indices, test_indices_path)
-    print(f"Test indices saved to {test_indices_path}")
-
-    # Save config
-    config_save_path = os.path.join(
-        base_save_path, cfg.experiment_name, timestamp, "config.yaml"
-    )
-    with open(config_save_path, "w") as f:
-        yaml.dump(cfg, f)
-    print(f"Config saved to {config_save_path}")
+    print(format_sweep_results(results))
 
 
 if __name__ == "__main__":
