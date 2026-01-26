@@ -317,12 +317,10 @@ class ThermalGeneratorsComponent(UCComponent):
             :, None
         ]  # shape (n_units, 1)
 
-        turn_on_costs = cp.sum(cp.multiply(min_power_cost, self.is_on))
-
         # Segment costs
         segment_costs = cp.sum(cp.multiply(self.segprod, self.segment_cost))
 
-        return turn_on_costs + segment_costs
+        return segment_costs
 
     def _build_segment_mw_cost(self, curves, max_segments):
         num_units = len(curves)
