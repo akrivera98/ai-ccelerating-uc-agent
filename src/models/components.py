@@ -313,10 +313,7 @@ class ThermalGeneratorsComponent(UCComponent):
         return constraints
 
     def define_objective(self):
-        min_power_cost = np.array([curve[0][1] for curve in self.mw_cost_curves])[
-            :, None
-        ]  # shape (n_units, 1)
-
+        
         # Segment costs
         segment_costs = cp.sum(cp.multiply(self.segprod, self.segment_cost))
 
