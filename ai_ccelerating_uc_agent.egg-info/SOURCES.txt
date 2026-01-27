@@ -11,5 +11,7 @@ tests/test_constraint_violations.py
 tests/test_cuclarabel.py
 tests/test_cuclarabel_jax.py
 tests/test_dataset.py
+tests/test_ed_model_lp.py
 tests/test_ed_model_qp.py
+tests/test_qpth.py
 tests/test_simul_charge_discharge.py

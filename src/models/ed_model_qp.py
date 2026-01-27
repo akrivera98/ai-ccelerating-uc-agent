@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 from qpth.qp import QPFunction, QPSolvers
+from scipy.optimize import linprog
+from scipy import sparse
+import numpy as np
 
 
 class EDShapes:
@@ -185,7 +188,7 @@ class EDModelQP(nn.Module):
         self._fill_profiled_rhs(h, solar_max, wind_max)
         self._fill_storage_rhs(b, h, is_charging, is_discharging)
         self._fill_thermal_rhs(b, h, is_on)
-        self._fill_system_rhs(b, load)
+        self._fill_system_rhs(b, h, load)
 
         print("device:", self.device)
         print("B:", load.shape[0])
@@ -197,7 +200,9 @@ class EDModelQP(nn.Module):
         print("is_charging:", tuple(is_charging.shape))
         print("is_discharging:", tuple(is_discharging.shape))
 
-        y = QPFunction(verbose=verbose, solver=QPSolvers.PDIPM_BATCHED)(self.Q, p, self.G, h, self.A, b)
+        y = QPFunction(verbose=verbose, solver=QPSolvers.PDIPM_BATCHED)(
+            self.Q, p, self.G, h, self.A, b
+        )
         return y  # you should probably have this be a dict
 
     # -- helper functions --
@@ -208,6 +213,8 @@ class EDModelQP(nn.Module):
 
         profiled = sorted(ed_data_dict["profiled_gen_data_list"], key=lambda g: g.name)
         names = [g.name for g in profiled]
+
+        self.profiled_units_names = names
         min_power = torch.tensor(
             [g.min_power for g in profiled], device=builder.device, dtype=builder.dtype
         )
@@ -240,6 +247,9 @@ class EDModelQP(nn.Module):
         sh = self.sh
         idx = self.idx
         storage = sorted(ed_data_dict["storage_data_list"], key=lambda s: s.name)
+        names = [s.name for s in storage]
+
+        self.storage_units_names = names
 
         max_levels = torch.tensor(
             [s.max_level for s in storage], device=builder.device, dtype=builder.dtype
@@ -391,6 +401,8 @@ class EDModelQP(nn.Module):
         thermals = sorted(ed_data_dict["thermal_gen_data_list"], key=lambda g: g.name)
         G, T, K = sh.G, sh.T, sh.K
 
+        self.thermal_units_names = [g.name for g in thermals]
+
         # ---- constants ----
         min_power = torch.tensor(
             [g.min_power for g in thermals], device=builder.device, dtype=builder.dtype
@@ -478,6 +490,7 @@ class EDModelQP(nn.Module):
         idx = self.idx
 
         power_balance_penalty = ed_data_dict["system_data"].power_balance_penalty
+        self.power_balance_penalty = power_balance_penalty
 
         # Equality: power balance
         for t in range(sh.T):
@@ -506,6 +519,12 @@ class EDModelQP(nn.Module):
             coeffs[idx.curt(t)] = 1.0
 
             builder.add_eq_row(coeffs, rhs_key="power_balance", meta=t)
+
+        # Upper bound on curtailment: curt(t) <= load(t)
+        # Lower bound on curtailment is zero by variable nonnegativity
+        for t in range(sh.T):
+            builder.add_ub_row({idx.curt(t): 1.0}, rhs_key="curt_ub", meta=t)
+            builder.add_ub_row({idx.curt(t): -1.0}, rhs_key="curt_nn", meta=t)
 
     def _fill_profiled_rhs(self, h, solar_max, wind_max):
         # pg lower bounds
@@ -595,8 +614,244 @@ class EDModelQP(nn.Module):
         for row_id in self.builder.eq_rows.get("pa_link", []):
             b[:, row_id] = 0.0
 
-    def _fill_system_rhs(self, b, load):
+    def _fill_system_rhs(self, b, h, load, is_on):
         # Power balance
         for row_id in self.builder.eq_rows.get("power_balance", []):
             _, t = self.b_spec[row_id]
-            b[:, row_id] = load[:, t]
+
+            # subtract fixed thermal minimum output from RHS
+            # shape: (B,)
+            pmin_on = (self.th_min_power[None, :] * is_on[:, :, t]).sum(dim=1)
+
+            b[:, row_id] = load[:, t] - pmin_on
+
+        # Curtailment ub
+        for row_id in self.builder.ub_rows.get("curt_ub", []):
+            _, t = self.h_spec[row_id]
+            h[:, row_id] = load[:, t]
+
+        for row_id in self.builder.ub_rows.get("curt_nn", []):
+            h[:, row_id] = 0.0
+
+
+class EDModelLP(EDModelQP):
+    """
+    LP sanity-check solver for the ED formulation using SciPy HiGHS.
+
+    Reuses all matrix construction and RHS filling from EDModelQP, but solves:
+        min_y p^T y
+        s.t.  G y <= h
+              A y  = b
+
+    To make this scalable, it extracts all single-variable +/-1 inequality rows in G
+    into variable bounds lb <= y <= ub, and removes those rows from (G,h) before calling HiGHS.
+    """
+
+    def __init__(
+        self, ed_data_dict, device="cpu", extract_bounds=True, use_sparse=True
+    ):
+        super().__init__(ed_data_dict, eps=0.0, device=device)  # eps not used for LP
+        self.extract_bounds = extract_bounds
+        self.use_sparse = use_sparse
+
+        # Precompute which inequality rows in G are pure bounds (single nonzero, coeff = +1 or -1)
+        with torch.no_grad():
+            G = self.G  # (nineq, nz)
+            nz = G.shape[1]
+
+            nz_mask = G != 0
+            nnz = nz_mask.sum(dim=1)  # (nineq,)
+            single = nnz == 1
+
+            row_ids = torch.nonzero(single, as_tuple=False).flatten()
+            if row_ids.numel() == 0:
+                self.bound_row_ids = None
+                self.bound_cols = None
+                self.bound_sign = None
+                self.keep_row_mask = torch.ones(
+                    (self.nineq,), dtype=torch.bool, device=G.device
+                )
+            else:
+                rc = torch.nonzero(
+                    nz_mask[row_ids], as_tuple=False
+                )  # (k, 2): [row_in_subset, col]
+                cols = rc[:, 1]  # (k,)
+                coeff = G[row_ids, cols]  # (k,)
+
+                is_pos1 = torch.isclose(coeff, torch.ones_like(coeff))
+                is_neg1 = torch.isclose(coeff, -torch.ones_like(coeff))
+                is_pm1 = is_pos1 | is_neg1
+
+                # Only treat exact +/-1 singleton rows as bounds; keep the others in G.
+                bound_row_ids = row_ids[is_pm1]
+                bound_cols = cols[is_pm1]
+                bound_sign = torch.where(
+                    is_pos1[is_pm1],
+                    torch.ones_like(bound_cols),
+                    -torch.ones_like(bound_cols),
+                ).to(G.dtype)
+
+                keep_mask = torch.ones((self.nineq,), dtype=torch.bool, device=G.device)
+                keep_mask[bound_row_ids] = False
+
+                self.bound_row_ids = bound_row_ids
+                self.bound_cols = bound_cols
+                self.bound_sign = bound_sign
+                self.keep_row_mask = keep_mask
+
+            # Cache reduced G (rows kept) in CPU SciPy-friendly format
+            G_keep = self.G[self.keep_row_mask, :]  # (nkeep, nz)
+            G_cpu = G_keep.detach().cpu().numpy()
+
+            if self.use_sparse:
+                self._G_keep_scipy = sparse.csr_matrix(G_cpu)
+            else:
+                self._G_keep_scipy = G_cpu
+
+            # Cache A once too
+            A_cpu = self.A.detach().cpu().numpy()
+            if self.use_sparse:
+                self._A_scipy = sparse.csr_matrix(A_cpu)
+            else:
+                self._A_scipy = A_cpu
+
+            self.nz_lp = nz  # convenience
+
+    def forward(
+        self,
+        load,
+        solar_max,
+        wind_max,
+        is_on,
+        is_charging,
+        is_discharging,
+        *,
+        return_scipy_results=False,
+        highs_time_limit=None,
+    ):
+        # --- same batching logic as EDModelQP ---
+        if load.dim() == 1:
+            B = 1
+        else:
+            B = load.shape[0]
+
+        h = torch.zeros((B, self.nineq), device=self.device)
+        b = torch.zeros((B, self.neq), device=self.device)
+        p = self.p0.unsqueeze(0).expand(B, -1)  # (B, nz), constant objective
+
+        if solar_max.dim() == 1:
+            solar_max = solar_max.unsqueeze(0).expand(B, -1)
+        if wind_max.dim() == 1:
+            wind_max = wind_max.unsqueeze(0).expand(B, -1)
+        if load.dim() == 1:
+            load = load.unsqueeze(0).expand(B, -1)
+        if is_on.dim() == 2:
+            is_on = is_on.unsqueeze(0).expand(B, -1, -1)
+        if is_charging.dim() == 2:
+            is_charging = is_charging.unsqueeze(0).expand(B, -1, -1)
+        if is_discharging.dim() == 2:
+            is_discharging = is_discharging.unsqueeze(0).expand(B, -1, -1)
+
+        # Fill RHS exactly as in your QP model
+        self._fill_profiled_rhs(h, solar_max, wind_max)
+        self._fill_storage_rhs(b, h, is_charging, is_discharging)
+        self._fill_thermal_rhs(b, h, is_on)
+        self._fill_system_rhs(b, h, load, is_on)
+
+        # Solve one LP per batch item (HiGHS is not batched)
+        ys = []
+        results = []
+
+        # Precompute CPU objective (same each batch item)
+        # If you want per-instance objective later, replace with a computed p.
+        # (Right now p is constant, which matches your code.)
+        for i in range(B):
+            c = p[i].detach().cpu().numpy().astype(np.float64, copy=False)
+            b_eq = b[i].detach().cpu().numpy().astype(np.float64, copy=False)
+
+            if self.extract_bounds and (self.bound_row_ids is not None):
+                # Start with (-inf, +inf) bounds
+                lb = np.full((self.nz_lp,), -np.inf, dtype=np.float64)
+                ub = np.full((self.nz_lp,), np.inf, dtype=np.float64)
+
+                # Pull out the bound RHS values for this instance
+                h_i = h[i]  # (nineq,) on self.device
+                rhs = (
+                    h_i[self.bound_row_ids]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .astype(np.float64, copy=False)
+                )
+                cols = self.bound_cols.detach().cpu().numpy()
+                signs = (
+                    self.bound_sign.detach()
+                    .cpu()
+                    .numpy()
+                    .astype(np.float64, copy=False)
+                )
+
+                # +1 * y_j <= u  => ub[j] = min(ub[j], u)
+                pos = signs > 0
+                if np.any(pos):
+                    j = cols[pos]
+                    u = rhs[pos]
+                    # multiple constraints can hit same j
+                    for jj, uu in zip(j, u):
+                        if uu < ub[jj]:
+                            ub[jj] = uu
+
+                # -1 * y_j <= -l => y_j >= l  => lb[j] = max(lb[j], l) where l = -rhs
+                neg = signs < 0
+                if np.any(neg):
+                    j = cols[neg]
+                    l = -rhs[neg]
+                    for jj, ll in zip(j, l):
+                        if ll > lb[jj]:
+                            lb[jj] = ll
+
+                # Remaining inequalities
+                h_ub = (
+                    h_i[self.keep_row_mask]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .astype(np.float64, copy=False)
+                )
+                A_ub = self._G_keep_scipy
+
+                bounds = list(zip(lb.tolist(), ub.tolist()))
+            else:
+                # No bound extraction; use full G,h
+                A_ub = (
+                    sparse.csr_matrix(self.G.detach().cpu().numpy())
+                    if self.use_sparse
+                    else self.G.detach().cpu().numpy()
+                )
+                h_ub = h[i].detach().cpu().numpy().astype(np.float64, copy=False)
+                bounds = None
+
+            res = linprog(
+                c=c,
+                A_ub=A_ub,
+                b_ub=h_ub,
+                A_eq=self._A_scipy,
+                b_eq=b_eq,
+                bounds=bounds,
+                method="highs",
+                options=(
+                    {"time_limit": highs_time_limit}
+                    if highs_time_limit is not None
+                    else None
+                ),
+            )
+
+            results.append(res)
+            if not res.success:
+                raise RuntimeError(f"HiGHS LP failed (batch {i}): {res.message}")
+
+            ys.append(torch.tensor(res.x, device=self.device, dtype=torch.float32))
+
+        y = torch.stack(ys, dim=0)  # (B, nz)
+
+        return (y, results) if return_scipy_results else y

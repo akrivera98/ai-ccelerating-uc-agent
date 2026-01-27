@@ -9,33 +9,40 @@ def load_competiton_solution(output_path: str):
     with open(output_path, "r") as f:
         output_data = json.load(f)
 
-    # Create profiled generation array
+    # ---- Profiled generation (sorted by name) ----
     profiled_generation = []
     profiled_units_names = []
-    for gen_name, gen_data in output_data["Profiled production (MW)"].items():
+    for gen_name in sorted(output_data["Profiled production (MW)"].keys()):
+        gen_data = output_data["Profiled production (MW)"][gen_name]
         profiled_generation.append(np.array(gen_data))
         profiled_units_names.append(gen_name)
 
+    # ---- Thermal generation (sorted by name) ----
     thermal_generation = []
     thermal_units_names = []
-    for gen_name, gen_data in output_data["Thermal production (MW)"].items():
+    for gen_name in sorted(output_data["Thermal production (MW)"].keys()):
+        gen_data = output_data["Thermal production (MW)"][gen_name]
         thermal_generation.append(np.array(gen_data))
         thermal_units_names.append(gen_name)
 
+    # ---- Storage charge (sorted by name) ----
     charge_rates = []
     storage_units_names = []
-    for storage_name, charge_data in output_data["Storage charging rates (MW)"].items():
+    for storage_name in sorted(output_data["Storage charging rates (MW)"].keys()):
+        charge_data = output_data["Storage charging rates (MW)"][storage_name]
         charge_rates.append(np.array(charge_data))
         storage_units_names.append(storage_name)
 
+    # ---- Storage discharge (same sorted order) ----
     discharge_rates = []
-    for storage_name, discharge_data in output_data[
-        "Storage discharging rates (MW)"
-    ].items():
+    for storage_name in storage_units_names:
+        discharge_data = output_data["Storage discharging rates (MW)"][storage_name]
         discharge_rates.append(np.array(discharge_data))
 
+    # ---- Storage levels (same sorted order) ----
     storage_levels = []
-    for storage_name, data in output_data["Storage level (MWh)"].items():
+    for storage_name in storage_units_names:
+        data = output_data["Storage level (MWh)"][storage_name]
         storage_levels.append(np.array(data))
 
     competition_solution = {
@@ -199,3 +206,68 @@ def plot_one_unit(var_key, name, my_sol, ref_sol):
     plt.grid(axis="y", alpha=0.3)
     plt.tight_layout()
     plt.show()
+
+
+def unpack_lp_solution(y, ed_model_qp):
+    """
+    y: (nz,) or (1,nz) or (B,nz) from SciPy/HiGHS (numpy) or torch
+    ed_model_qp: instance of EDModelQP (or EDModelLP)
+    Returns a dict with arrays shaped like competition_solution.
+    """
+    sh = ed_model_qp.sh
+    idx = ed_model_qp.idx
+
+    # to numpy, ensure shape (B, nz)
+    if torch.is_tensor(y):
+        y = y.detach().cpu().numpy()
+    y = np.asarray(y)
+    if y.ndim == 1:
+        y = y[None, :]
+    B, nz = y.shape
+    assert nz == idx.nz, f"Expected nz={idx.nz}, got {nz}"
+
+    prof = np.zeros((B, sh.P, sh.T))
+    therm_pa = np.zeros((B, sh.G, sh.T))
+    curt = np.zeros((B, sh.T))
+    ch = np.zeros((B, sh.S, sh.T))
+    dis = np.zeros((B, sh.S, sh.T))
+    level = np.zeros((B, sh.S, sh.T))
+
+    for b in range(B):
+        for p in range(sh.P):
+            for t in range(sh.T):
+                prof[b, p, t] = y[b, idx.pg(p, t)]
+
+        for g in range(sh.G):
+            for t in range(sh.T):
+                therm_pa[b, g, t] = y[b, idx.pa(g, t)]
+
+        for t in range(sh.T):
+            curt[b, t] = y[b, idx.curt(t)]
+
+        for s in range(sh.S):
+            for t in range(sh.T):
+                ch[b, s, t] = y[b, idx.cr(s, t)]
+                dis[b, s, t] = y[b, idx.dr(s, t)]
+                level[b, s, t] = y[b, idx.s(s, t)]
+
+    out = {
+        "profiled_generation": prof.squeeze(0),
+        "charge_rate": ch.squeeze(0),
+        "discharge_rate": dis.squeeze(0),
+        "storage_level": level.squeeze(0),
+        "curtailment": curt.squeeze(0),
+    }
+
+    # Thermal generation = pmin + pa when pa > 0
+    pa = therm_pa.squeeze(0)  # (G,T)
+    tol = 1e-6
+    nonzero = np.abs(pa) > tol
+    pmin = ed_model_qp.th_min_power.detach().cpu().numpy()[:, None]
+    out["thermal_generation"] = pa + np.where(nonzero, pmin, 0.0)
+
+    out["thermal_units_names"] = ed_model_qp.thermal_units_names
+    out["profiled_units_names"] = ed_model_qp.profiled_units_names
+    out["storage_units_names"] = ed_model_qp.storage_units_names
+
+    return out
