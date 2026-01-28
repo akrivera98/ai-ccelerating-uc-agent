@@ -42,7 +42,7 @@ class CustomLoss1(nn.Module):
 
 
 class CustomLoss(nn.Module):
-    def __init__(self, ed_data_dict, violations_penalty=1000.0):
+    def __init__(self, ed_data_dict, loss_weights, solve_lp_in_loss=True):
         super().__init__()
 
         self._get_parameters_from_data_dict(ed_data_dict)
@@ -50,7 +50,20 @@ class CustomLoss(nn.Module):
         self.is_on_sup_loss = nn.BCELoss()
         self.is_charging_sup_loss = nn.BCELoss()
         self.is_discharging_sup_loss = nn.BCELoss()
-        self.violations_penalty = violations_penalty
+        self.violations_penalty = (
+            loss_weights.violation if loss_weights.violation is not None else 1.0
+        )
+        self.supervised_weight = (
+            loss_weights.supervised if loss_weights.supervised is not None else 1.0
+        )
+        self.ed_objective_weight = (
+            loss_weights.ed_objective if loss_weights.ed_objective is not None else 1.0
+        )
+        self.start_up_weight = (
+            loss_weights.startup if loss_weights.startup is not None else 1.0
+        )
+
+        self.solve_lp_in_loss = solve_lp_in_loss
 
     def _get_parameters_from_data_dict(self, ed_data_dict):
         production_cost_curves_list = [
@@ -177,7 +190,9 @@ class CustomLoss(nn.Module):
         wind_max,
     ):
         # Supervised loss terms
-        supervised_loss_term = self.compute_supervised_loss(outputs_dict, targets)
+        supervised_loss_term = (
+            self.compute_supervised_loss(outputs_dict, targets) * self.supervised_weight
+        )
 
         self.switch_on, self.switch_off = self._compute_switch_on_off(
             outputs_dict["is_on_rounded"], initial_commitment=initial_commitment
@@ -189,23 +204,34 @@ class CustomLoss(nn.Module):
         # )  # TODO: check that this cost and the LP objective are the same.
 
         # LP objective (I'm getting grads wrt to this)
-        is_on = outputs_dict["is_on_rounded"]
-        is_charging = outputs_dict["is_charging"]
-        is_discharging = outputs_dict["is_discharging"]
-        economic_dispatch_cost = ed_model_lp.objective(
-            load, solar_max, wind_max, is_on, is_charging, is_discharging
-        ).mean()
+        if self.solve_lp_in_loss:
+            is_on = outputs_dict["is_on_rounded"]
+            is_charging = outputs_dict["is_charging"]
+            is_discharging = outputs_dict["is_discharging"]
+            economic_dispatch_cost = (
+                ed_model_lp.objective(
+                    load, solar_max, wind_max, is_on, is_charging, is_discharging
+                ).mean()
+                * self.ed_objective_weight
+            )
+        else:
+            economic_dispatch_cost = torch.tensor(0.0, device=load.device)
 
         # turn on costs
-        startup_costs = self.compute_startup_costs(self.switch_on)
+        startup_costs = (
+            self.compute_startup_costs(self.switch_on) * self.start_up_weight
+        ) / load.shape[0] # normalize by batch size
 
         # Constraint violation loss terms
-        up_down_time_violations_cost = self.compute_constraint_violations(
-            outputs_dict["is_on_rounded"],
-            self.switch_on,
-            self.switch_off,
-            initial_status=initial_commitment,
-        )
+        up_down_time_violations_cost = (
+            self.compute_constraint_violations(
+                outputs_dict["is_on_rounded"],
+                self.switch_on,
+                self.switch_off,
+                initial_status=initial_commitment,
+            )
+            * self.violations_penalty
+        ) / load.shape[0]  # normalize by batch size
         total = (
             economic_dispatch_cost
             + startup_costs
