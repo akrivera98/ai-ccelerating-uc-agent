@@ -14,6 +14,40 @@ from collections import defaultdict
 from src.utils.losses import CustomLoss
 
 
+def save_checkpoint(
+    model,
+    optimizer,
+    epoch,
+    cfg,
+    base_save_path,
+    timestamp,
+    train_losses,
+    train_traces,
+    val_losses,
+):
+    ckpt_dir = os.path.join(
+        base_save_path, cfg.experiment_name, timestamp, "checkpoints"
+    )
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    ckpt_path = os.path.join(ckpt_dir, f"epoch_{epoch:04d}.pt")
+
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "train_losses": train_losses,
+            "train_traces": train_traces,
+            "val_losses": val_losses,
+            "config": cfg,
+        },
+        ckpt_path,
+    )
+
+    print(f"Checkpoint saved: {ckpt_path}")
+
+
 class EarlyStopping:
     def __init__(
         self,
@@ -290,6 +324,7 @@ def main() -> None:
     val_losses = []  # store (epoch, val_loss)
 
     val_every = getattr(cfg.training, "val_every", 5)
+    save_every = getattr(cfg.output, "save_every", 0)
 
     # Outputs setup
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -365,17 +400,25 @@ def main() -> None:
                 f"- train_loss: {train_loss:.4f}"
             )  # TODO: print each component of the loss as well.
 
-        if cfg.output.save_every > 0 and (epoch + 1) % cfg.output.save_every == 0:
-            # TODO: add the losses trace here too.
-            # Save intermediate model
-            intermediate_save_path = os.path.join(
-                base_save_path,
-                cfg.experiment_name,
-                timestamp,
-                f"simple_mlp_epoch_{epoch + 1}.pt",
-            )
-            torch.save(model.state_dict(), intermediate_save_path)
-            print(f"Intermediate model saved to {intermediate_save_path}")
+        if save_every > 0:
+            if (epoch + 1) % save_every == 0:
+                # TODO: add the losses trace here too.
+                # Save intermediate model
+                intermediate_save_path = os.path.join(
+                    base_save_path,
+                    cfg.experiment.name,
+                    timestamp,
+                    f"simple_mlp_epoch_{epoch + 1}.pt",
+                )
+                torch.save(
+                    {
+                        "train_losses": train_losses,
+                        "train_traces": train_traces,
+                        "val_losses": val_losses,
+                    },
+                    intermediate_save_path,
+                )
+                print(f"Intermediate losses saved to {intermediate_save_path}")
 
     # Save the model weights
     weights_save_path = os.path.join(

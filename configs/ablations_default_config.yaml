@@ -45,7 +45,7 @@ ablation:
     eval: "threshold" 
     threshold: 0.5
 
-  use_ed_in_training: true
+  use_ed_in_training: false
 
   loss_weights: 
     supervised: 1.0
@@ -69,4 +69,4 @@ training:
 # -- Checkpointing and outputs --
 output: 
   base_dir: "results"
-  save_every: 0 # 0 = only save final.
+  save_every: 2 # 0 = only save final.
