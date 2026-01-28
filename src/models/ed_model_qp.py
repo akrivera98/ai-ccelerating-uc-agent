@@ -4,6 +4,7 @@ from qpth.qp import QPFunction, QPSolvers
 from scipy.optimize import linprog
 from scipy import sparse
 import numpy as np
+from torch.autograd import Function
 
 
 class EDShapes:
@@ -164,42 +165,9 @@ class EDModelQP(nn.Module):
         is_discharging,
         verbose=False,
     ):
-        if load.dim() == 1:
-            B = 1
-        else:
-            B = load.shape[0]  # batch size
-        h = torch.zeros((B, self.nineq), device=self.device)
-        b = torch.zeros((B, self.neq), device=self.device)
-        p = self.p0.unsqueeze(0).expand(B, -1)  # (B, nz)
-
-        if solar_max.dim() == 1:
-            solar_max = solar_max.unsqueeze(0).expand(B, -1)
-        if wind_max.dim() == 1:
-            wind_max = wind_max.unsqueeze(0).expand(B, -1)
-        if load.dim() == 1:
-            load = load.unsqueeze(0).expand(B, -1)
-        if is_on.dim() == 2:
-            is_on = is_on.unsqueeze(0).expand(B, -1, -1)
-        if is_charging.dim() == 2:
-            is_charging = is_charging.unsqueeze(0).expand(B, -1, -1)
-        if is_discharging.dim() == 2:
-            is_discharging = is_discharging.unsqueeze(0).expand(B, -1, -1)
-
-        self._fill_profiled_rhs(h, solar_max, wind_max)
-        self._fill_storage_rhs(b, h, is_charging, is_discharging)
-        self._fill_thermal_rhs(b, h, is_on)
-        self._fill_system_rhs(b, h, load)
-
-        print("device:", self.device)
-        print("B:", load.shape[0])
-        print("nineq:", self.nineq, "neq:", self.neq)
-        print("load:", tuple(load.shape))
-        print("solar_max:", tuple(solar_max.shape))
-        print("wind_max:", tuple(wind_max.shape))
-        print("is_on:", tuple(is_on.shape))
-        print("is_charging:", tuple(is_charging.shape))
-        print("is_discharging:", tuple(is_discharging.shape))
-
+        p, h, b, *_ = self.build_phb(
+            load, solar_max, wind_max, is_on, is_charging, is_discharging
+        )
         y = QPFunction(verbose=verbose, solver=QPSolvers.PDIPM_BATCHED)(
             self.Q, p, self.G, h, self.A, b
         )
@@ -633,6 +601,55 @@ class EDModelQP(nn.Module):
         for row_id in self.builder.ub_rows.get("curt_nn", []):
             h[:, row_id] = 0.0
 
+    def _make_batched(
+        self, load, solar_max, wind_max, is_on, is_charging, is_discharging
+    ):
+        if load.dim() == 1:
+            B = 1
+        else:
+            B = load.shape[0]  # batch size
+
+        if solar_max.dim() == 1:
+            solar_max = solar_max.unsqueeze(0).expand(B, -1)
+        if wind_max.dim() == 1:
+            wind_max = wind_max.unsqueeze(0).expand(B, -1)
+        if load.dim() == 1:
+            load = load.unsqueeze(0).expand(B, -1)
+        if is_on.dim() == 2:
+            is_on = is_on.unsqueeze(0).expand(B, -1, -1)
+        if is_charging.dim() == 2:
+            is_charging = is_charging.unsqueeze(0).expand(B, -1, -1)
+        if is_discharging.dim() == 2:
+            is_discharging = is_discharging.unsqueeze(0).expand(B, -1, -1)
+
+        return load, solar_max, wind_max, is_on, is_charging, is_discharging
+
+    def build_phb(self, load, solar_max, wind_max, is_on, is_charging, is_discharging):
+        """
+        Build the (p, h, b) RHS for the QP/LP based on the current inputs.
+        Returns:
+            p: (B, nz)
+            h: (B, nineq)
+            b: (B, neq)
+        """
+        load, solar_max, wind_max, is_on, is_charging, is_discharging = (
+            self._make_batched(
+                load, solar_max, wind_max, is_on, is_charging, is_discharging
+            )
+        )
+
+        B = load.shape[0]
+        h = torch.zeros((B, self.nineq), device=self.device)
+        b = torch.zeros((B, self.neq), device=self.device)
+        p = self.p0.unsqueeze(0).expand(B, -1)  # (B, nz)
+
+        self._fill_profiled_rhs(h, solar_max, wind_max)
+        self._fill_storage_rhs(b, h, is_charging, is_discharging)
+        self._fill_thermal_rhs(b, h, is_on)
+        self._fill_system_rhs(b, h, load, is_on)
+
+        return p, h, b, load, solar_max, wind_max, is_on, is_charging, is_discharging
+
 
 class EDModelLP(EDModelQP):
     """
@@ -729,34 +746,11 @@ class EDModelLP(EDModelQP):
         return_scipy_results=False,
         highs_time_limit=None,
     ):
-        # --- same batching logic as EDModelQP ---
-        if load.dim() == 1:
-            B = 1
-        else:
-            B = load.shape[0]
+        p, h, b, load, *_ = self.build_phb(
+            load, solar_max, wind_max, is_on, is_charging, is_discharging
+        )
 
-        h = torch.zeros((B, self.nineq), device=self.device)
-        b = torch.zeros((B, self.neq), device=self.device)
-        p = self.p0.unsqueeze(0).expand(B, -1)  # (B, nz), constant objective
-
-        if solar_max.dim() == 1:
-            solar_max = solar_max.unsqueeze(0).expand(B, -1)
-        if wind_max.dim() == 1:
-            wind_max = wind_max.unsqueeze(0).expand(B, -1)
-        if load.dim() == 1:
-            load = load.unsqueeze(0).expand(B, -1)
-        if is_on.dim() == 2:
-            is_on = is_on.unsqueeze(0).expand(B, -1, -1)
-        if is_charging.dim() == 2:
-            is_charging = is_charging.unsqueeze(0).expand(B, -1, -1)
-        if is_discharging.dim() == 2:
-            is_discharging = is_discharging.unsqueeze(0).expand(B, -1, -1)
-
-        # Fill RHS exactly as in your QP model
-        self._fill_profiled_rhs(h, solar_max, wind_max)
-        self._fill_storage_rhs(b, h, is_charging, is_discharging)
-        self._fill_thermal_rhs(b, h, is_on)
-        self._fill_system_rhs(b, h, load, is_on)
+        B = load.shape[0]
 
         # Solve one LP per batch item (HiGHS is not batched)
         ys = []
@@ -855,3 +849,206 @@ class EDModelLP(EDModelQP):
         y = torch.stack(ys, dim=0)  # (B, nz)
 
         return (y, results) if return_scipy_results else y
+
+    def objective(
+        self,
+        load,
+        solar_max,
+        wind_max,
+        is_on,
+        is_charging,
+        is_discharging,
+        highs_time_limit=None,
+    ):
+        return EDLPObjectiveFn.apply(
+            self,
+            load,
+            solar_max,
+            wind_max,
+            is_on,
+            is_charging,
+            is_discharging,
+            highs_time_limit,
+        )
+
+
+class EDLPObjectiveFn(Function):
+    @staticmethod
+    def forward(
+        ctx,
+        model,
+        load,
+        solar_max,
+        wind_max,
+        is_on,
+        is_charging,
+        is_discharging,
+        highs_time_limit=None,
+    ):
+        """
+        Returns f*: (B,) optimal objective value(s).
+        """
+        # Build p,h,b (and batched inputs)
+        p, h, b, load, solar_max, wind_max, is_on, is_charging, is_discharging = (
+            model.build_phb(
+                load, solar_max, wind_max, is_on, is_charging, is_discharging
+            )
+        )
+        B = load.shape[0]
+
+        # IMPORTANT: keep bounds extraction OFF for this differentiable objective
+        # (otherwise duals split across ineqlin + bounds, needs extra mapping)
+        A_ub = sparse.csr_matrix(model.G.detach().cpu().numpy())
+        A_eq = sparse.csr_matrix(model.A.detach().cpu().numpy())
+
+        f_list = []
+        lam_ub_list = []
+        nu_eq_list = []
+
+        for i in range(B):
+            c = p[i].detach().cpu().numpy().astype(np.float64, copy=False)
+            h_ub = h[i].detach().cpu().numpy().astype(np.float64, copy=False)
+            b_eq = b[i].detach().cpu().numpy().astype(np.float64, copy=False)
+
+            res = linprog(
+                c=c,
+                A_ub=A_ub,
+                b_ub=h_ub,
+                A_eq=A_eq,
+                b_eq=b_eq,
+                bounds=None,
+                method="highs",
+                options=(
+                    {"time_limit": highs_time_limit}
+                    if highs_time_limit is not None
+                    else None
+                ),
+            )
+            if not res.success:
+                raise RuntimeError(f"HiGHS LP failed (batch {i}): {res.message}")
+
+            f_list.append(res.fun)
+
+            # Duals (SciPy HiGHS)
+            lam_ub_list.append(res.ineqlin.marginals)  # shape (nineq,)
+            nu_eq_list.append(res.eqlin.marginals)  # shape (neq,)
+
+        device = model.device
+        dtype = load.dtype
+
+        f = torch.as_tensor(np.array(f_list), device=device, dtype=dtype)  # (B,)
+        lam_ub = torch.as_tensor(
+            np.stack(lam_ub_list), device=device, dtype=dtype
+        )  # (B,nineq)
+        nu_eq = torch.as_tensor(
+            np.stack(nu_eq_list), device=device, dtype=dtype
+        )  # (B,neq)
+
+        # Save for backward
+        ctx.model = model
+        ctx.save_for_backward(
+            lam_ub, nu_eq, load, solar_max, wind_max, is_on, is_charging, is_discharging
+        )
+
+        ctx.load_was_1d = load.dim() == 1
+        ctx.solar_was_1d = solar_max.dim() == 1
+        ctx.wind_was_1d = wind_max.dim() == 1
+        ctx.is_on_was_2d = is_on.dim() == 2
+        ctx.is_chg_was_2d = is_charging.dim() == 2
+        ctx.is_dis_was_2d = is_discharging.dim() == 2
+
+        return f
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        """
+        grad_out: (B,) upstream gradient
+        returns grads for: model, load, solar_max, wind_max, is_on, is_charging, is_discharging, highs_time_limit
+        """
+        model = ctx.model
+        lam_ub, nu_eq, load, solar_max, wind_max, is_on, is_charging, is_discharging = (
+            ctx.saved_tensors
+        )
+
+        # Apply upstream gradient
+        if grad_out.dim() == 0:
+            grad_out = grad_out.unsqueeze(0)
+        go = grad_out.view(-1, 1)
+
+        # Core sensitivities (assuming SciPy marginals match λ,ν; we’ll verify sign once) # TODO: verify this!!!
+        df_dh = lam_ub * go  # (B,nineq)
+        df_db = nu_eq * go  # (B,neq)
+
+        # Allocate input grads
+        g_load = torch.zeros_like(load)
+        g_solar = torch.zeros_like(solar_max)
+        g_wind = torch.zeros_like(wind_max)
+        g_is_on = torch.zeros_like(is_on)
+        g_is_chg = torch.zeros_like(is_charging)
+        g_is_dis = torch.zeros_like(is_discharging)
+
+        # ---- Map inequality RHS sensitivities to inputs ----
+
+        # pg_ub rows: solar_max / wind_max
+        for row_id in model.builder.ub_rows.get("pg_ub", []):
+            _, (p, t) = model.h_spec[row_id]
+            if p == model.pg_idx_solar:
+                g_solar[:, t] += df_dh[:, row_id]
+            elif p == model.pg_idx_wind:
+                g_wind[:, t] += df_dh[:, row_id]
+
+        # storage gating
+        for row_id in model.builder.ub_rows.get("st_max_charge", []):
+            _, (s, t) = model.h_spec[row_id]
+            g_is_chg[:, s, t] += df_dh[:, row_id] * model.st_max_charge[s]
+
+        for row_id in model.builder.ub_rows.get("st_min_charge", []):
+            _, (s, t) = model.h_spec[row_id]
+            g_is_chg[:, s, t] += df_dh[:, row_id] * (-model.st_min_charge[s])
+
+        for row_id in model.builder.ub_rows.get("st_max_discharge", []):
+            _, (s, t) = model.h_spec[row_id]
+            g_is_dis[:, s, t] += df_dh[:, row_id] * model.st_max_discharge[s]
+
+        for row_id in model.builder.ub_rows.get("st_min_discharge", []):
+            _, (s, t) = model.h_spec[row_id]
+            g_is_dis[:, s, t] += df_dh[:, row_id] * (-model.st_min_discharge[s])
+
+        # thermal gating
+        for row_id in model.builder.ub_rows.get("pa_ub_on", []):
+            _, (g, t) = model.h_spec[row_id]
+            g_is_on[:, g, t] += df_dh[:, row_id] * model.th_power_diff[g]
+
+        for row_id in model.builder.ub_rows.get("seg_ub_on", []):
+            _, (g, t, k) = model.h_spec[row_id]
+            g_is_on[:, g, t] += df_dh[:, row_id] * model.th_seg_mw[g, k]
+
+        # curt ub depends on load
+        for row_id in model.builder.ub_rows.get("curt_ub", []):
+            _, t = model.h_spec[row_id]
+            g_load[:, t] += df_dh[:, row_id]
+
+        # ---- Map equality RHS sensitivities to inputs ----
+
+        # power balance row: b = load - sum_g pmin[g]*is_on[g,t]
+        for row_id in model.builder.eq_rows.get("power_balance", []):
+            _, t = model.b_spec[row_id]
+            g_load[:, t] += df_db[:, row_id]
+            g_is_on[:, :, t] += df_db[:, row_id].unsqueeze(1) * (
+                -model.th_min_power[None, :]
+            )
+
+        if ctx.load_was_1d:
+            g_load = g_load.squeeze(0)
+        if ctx.solar_was_1d:
+            g_solar = g_solar.squeeze(0)
+        if ctx.wind_was_1d:
+            g_wind = g_wind.squeeze(0)
+        if ctx.is_on_was_2d:
+            g_is_on = g_is_on.squeeze(0)
+        if ctx.is_chg_was_2d:
+            g_is_chg = g_is_chg.squeeze(0)
+        if ctx.is_dis_was_2d:
+            g_is_dis = g_is_dis.squeeze(0)
+
+        return (None, g_load, g_solar, g_wind, g_is_on, g_is_chg, g_is_dis, None)

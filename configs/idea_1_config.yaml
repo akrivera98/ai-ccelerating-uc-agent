@@ -9,8 +9,8 @@ backend: torch
 solver: CUCLARABEL
 
 dataset:
-  data_dir: "data/Train_Data"
-  ed_instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
+  data_dir: "data/starting_kit_ai-uc_v2/Train_Data"
+  ed_instance_path: "data/starting_kit_ai-uc_v2/Train_Data/instance_2021_Q1_1/InputData.json"
 
 splits:
   train: 0.70

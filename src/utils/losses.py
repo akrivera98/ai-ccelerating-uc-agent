@@ -162,8 +162,19 @@ class CustomLoss(nn.Module):
 
         return segment_mw, segment_cost
 
+    def compute_startup_costs(self, switch_on):
+        return (self.start_up_costs.view(1, -1, 1) * switch_on).sum()
+
     def forward(
-        self, ed_solution, outputs_dict, targets, initial_status, initial_commitment
+        self,
+        ed_model_lp,
+        outputs_dict,
+        targets,
+        initial_status,
+        initial_commitment,
+        load,
+        solar_max,
+        wind_max,
     ):
         # Supervised loss terms
         supervised_loss_term = self.compute_supervised_loss(outputs_dict, targets)
@@ -172,10 +183,21 @@ class CustomLoss(nn.Module):
             outputs_dict["is_on_rounded"], initial_commitment=initial_commitment
         )
 
-        # Unsupervised loss terms
-        economic_dispatch_cost = self.get_economic_dispatch_cost(
-            ed_solution, outputs_dict, self.switch_on
-        )  # TODO: check that this cost and the LP objective are the same.
+        # # Unsupervised loss terms
+        # economic_dispatch_cost = self.get_economic_dispatch_cost(
+        #     ed_solution, outputs_dict, self.switch_on
+        # )  # TODO: check that this cost and the LP objective are the same.
+
+        # LP objective (I'm getting grads wrt to this)
+        is_on = outputs_dict["is_on_rounded"]
+        is_charging = outputs_dict["is_charging"]
+        is_discharging = outputs_dict["is_discharging"]
+        economic_dispatch_cost = ed_model_lp.objective(
+            load, solar_max, wind_max, is_on, is_charging, is_discharging
+        ).mean()
+
+        # turn on costs
+        startup_costs = self.compute_startup_costs(self.switch_on)
 
         # Constraint violation loss terms
         up_down_time_violations_cost = self.compute_constraint_violations(
@@ -184,10 +206,20 @@ class CustomLoss(nn.Module):
             self.switch_off,
             initial_status=initial_commitment,
         )
-
-        return (
-            economic_dispatch_cost + supervised_loss_term + up_down_time_violations_cost
+        total = (
+            economic_dispatch_cost
+            + startup_costs
+            + supervised_loss_term
+            + up_down_time_violations_cost
         )
+
+        return {
+            "total": total,
+            "ed": economic_dispatch_cost,
+            "startup": startup_costs,
+            "supervised": supervised_loss_term,
+            "violations": up_down_time_violations_cost,
+        }
 
     def compute_supervised_loss(self, outputs_dict, targets):
         thermal_commitment_loss = self.is_on_sup_loss(
