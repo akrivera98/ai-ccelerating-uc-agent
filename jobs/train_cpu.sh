@@ -10,7 +10,7 @@
 set -euo pipefail
 mkdir -p logs
 
-source .venv/bin/activate
+source .venv-lp/bin/activate
 
 CONFIG=${1:-configs/idea_1_config.yaml}
 

@@ -13,6 +13,39 @@ from src.models.ed_model_qp import EDModelLP
 from src.models.data_classes import create_data_dict
 from collections import defaultdict
 
+def save_checkpoint(
+    model,
+    optimizer,
+    epoch,
+    cfg,
+    base_save_path,
+    timestamp,
+    train_losses,
+    train_traces,
+    val_losses,
+):
+    ckpt_dir = os.path.join(
+        base_save_path, cfg.experiment_name, timestamp, "checkpoints"
+    )
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    ckpt_path = os.path.join(ckpt_dir, f"epoch_{epoch:04d}.pt")
+
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "train_losses": train_losses,
+            "train_traces": train_traces,
+            "val_losses": val_losses,
+            "config": cfg,
+        },
+        ckpt_path,
+    )
+
+    print(f"Checkpoint saved: {ckpt_path}")
+
 
 class Config:
     def __init__(self, cfg_dict):
@@ -189,6 +222,16 @@ def main() -> None:
     val_losses = []  # store (epoch, val_loss)
 
     val_every = getattr(cfg.training, "val_every", 5)
+    save_every = getattr(cfg.training, "save_every", None)
+
+
+    # Save path
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    base_save_path = "results/"
+    os.makedirs(
+        os.path.join(base_save_path, cfg.experiment_name, timestamp), exist_ok=True
+    )
 
     for epoch in range(cfg.training.num_epochs):
         print(f"Epoch {epoch + 1}/{cfg.training.num_epochs}")
@@ -197,6 +240,19 @@ def main() -> None:
         )
         train_losses.append(train_loss)
         train_traces.append(train_trace)
+
+        if save_every is not None and (epoch + 1) % save_every == 0:
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch + 1,
+                cfg=cfg,
+                base_save_path=base_save_path,
+                timestamp=timestamp,
+                train_losses=train_losses,
+                train_traces=train_traces,
+                val_losses=val_losses,
+            )
 
         # Validate only every val_every epochs, and always on the last one
         # do_val = ((epoch + 1) % val_every == 0) or (
@@ -217,13 +273,6 @@ def main() -> None:
                 f"- train_loss: {train_loss:.4f}"
             )
 
-    # Save path
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    base_save_path = "results/"
-    os.makedirs(
-        os.path.join(base_save_path, cfg.experiment_name, timestamp), exist_ok=True
-    )
 
     # Save the model weights
     weights_save_path = os.path.join(
