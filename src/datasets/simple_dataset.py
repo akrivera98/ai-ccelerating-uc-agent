@@ -11,14 +11,31 @@ import gzip
 class SimpleDataset(Dataset):
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
-        self.features_files = glob.glob(
-            os.path.join(data_dir, "*", "explanatory_variables.xlsx")
-        )
-        self.target_files = glob.glob(
-            os.path.join(data_dir, "*", "response_variables.xlsx")
-        )
 
-        self.output_gz = glob.glob(os.path.join(data_dir, "*", "OutputData.json.gz"))
+        features = glob.glob(os.path.join(data_dir, "*", "explanatory_variables.xlsx"))
+        targets = glob.glob(os.path.join(data_dir, "*", "response_variables.xlsx"))
+        outputs = glob.glob(os.path.join(data_dir, "*", "OutputData.json.gz"))
+
+        # Key everything by instance directory
+        def key(p: str) -> str:
+            return os.path.dirname(p)
+
+        feat_map = {key(p): p for p in features}
+        targ_map = {key(p): p for p in targets}
+        out_map = {key(p): p for p in outputs}
+
+        # Instance directories present in all three
+        instance_dirs = sorted(feat_map.keys())
+
+        # Rebuild aligned lists
+        self.features_files = [feat_map[d] for d in instance_dirs]
+        self.target_files = [targ_map[d] for d in instance_dirs]
+        self.output_gz = [out_map[d] for d in instance_dirs]
+
+        # Final invariant check
+        assert (
+            len(self.features_files) == len(self.target_files) == len(self.output_gz)
+        ), "Mismatch after alignment."
 
     def __len__(self) -> int:
         assert len(self.features_files) == len(self.target_files), (
