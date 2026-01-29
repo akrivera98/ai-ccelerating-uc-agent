@@ -213,7 +213,7 @@ class CustomLoss(nn.Module):
                     load, solar_max, wind_max, is_on, is_charging, is_discharging
                 ).mean()
                 * self.ed_objective_weight
-            )
+            ) / 10000.0 # trying to scale down the ED objective
         else:
             economic_dispatch_cost = torch.tensor(0.0, device=load.device)
 

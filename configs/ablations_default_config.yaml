@@ -17,8 +17,8 @@ ed:
 
 # -- Data -- 
 dataset:
-  data_dir: "data/starting_kit_ai-uc_v2/Train_Data"
-  ed_instance_path: "data/starting_kit_ai-uc_v2/Train_Data/instance_2021_Q1_1/InputData.json"
+  data_dir: "data/Train_Data"
+  ed_instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
 
 splits:
   train: 0.70
@@ -26,7 +26,7 @@ splits:
   test: 0.15
 
 dataloader: 
-  batch_size: 1
+  batch_size: 16
   shuffle_train: true
 
 # -- NN model --
@@ -41,9 +41,7 @@ model:
 # -- Ablation switches --
 ablation:
   rounding: 
-    train: "STE"
-    eval: "threshold" 
-    threshold: 0.5
+    train: true
 
   use_ed_in_training: false
 
@@ -51,14 +49,14 @@ ablation:
     supervised: 1.0
     violation: 1.0
     ed_objective: 1.0
-    startup: 0.0
+    startup: 1.0
 
 # -- Training --
 training: 
-  num_epochs: 5
+  num_epochs: 50
   optimizer: "Adam"
   learning_rate: 1.0e-3
-  val_every: 2 # 0 = off
+  val_every: 5 # 0 = off
   early_stopping:
     enabled: true
     monitor: "val_loss"
@@ -69,4 +67,4 @@ training:
 # -- Checkpointing and outputs --
 output: 
   base_dir: "results"
-  save_every: 2 # 0 = only save final.
+  save_every: 10 # 0 = only save final.

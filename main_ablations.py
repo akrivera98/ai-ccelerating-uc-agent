@@ -128,6 +128,12 @@ def save_results():
 def validate_config(cfg: dict) -> None:
     cfg.training.learning_rate = float(cfg.training.learning_rate)
 
+    # If no rounding for training, can't use ED in training and can't evaluate violations or startup loss
+    if not cfg.ablation.rounding.train:
+        cfg.ablation.use_ed_in_training = False
+        cfg.ablation.loss_weights.eval_violations = 0.0
+        cfg.ablation.loss_weights.startup_loss = 0.0
+        cfg.ablation.loss_weights.ed_objective = 0.0
 
 def train_epoch(
     model,
@@ -165,6 +171,10 @@ def train_epoch(
         ## Apply rounding during training
         if ablations_settings.rounding.train:
             outputs_dict["is_on_rounded"] = ste_round(outputs_dict["is_on"])
+        else:
+            outputs_dict["is_on_rounded"] = torch.zeros_like(
+                outputs_dict["is_on"]
+            )  # dummy variable to skip rounding in loss
 
         ## Solve LP and evaluate loss
         load = features["profiles"][:, :, 0].to(device)
@@ -261,10 +271,48 @@ def main() -> None:
         default="configs/ablations_default_config.yaml",
         help="Path to the configuration file (YAML format).",
     )
+
+    # ---- Optional sweep overrides (all optional) ----
+    parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+
+    # toggles
+    parser.add_argument("--use-ste", type=int, default=None)  # 1/0
+    parser.add_argument("--use-ed-in-training", type=int, default=None)  # 1/0
+
+    # loss weights
+    parser.add_argument("--w-supervised", type=float, default=None)
+    parser.add_argument("--w-violation", type=float, default=None)
+    parser.add_argument("--w-ed-objective", type=float, default=None)
+    parser.add_argument("--w-startup", type=float, default=None)
+
     args = parser.parse_args()
 
     # Load config file
     cfg = load_config(args.config)
+
+    # ---- Apply CLI overrides (if provided) ----
+    if args.run_name is not None:
+        cfg.experiment.name = args.run_name
+
+    if args.seed is not None:
+        cfg.seed = args.seed
+
+    if args.use_ste is not None:
+        cfg.ablation.rounding.train = True if args.use_ste == 1 else False
+
+    if args.use_ed_in_training is not None:
+        cfg.ablation.use_ed_in_training = (args.use_ed_in_training == 1)
+
+    # loss weights (only override if provided)
+    if args.w_supervised is not None:
+        cfg.ablation.loss_weights.supervised = args.w_supervised
+    if args.w_violation is not None:
+        cfg.ablation.loss_weights.violation = args.w_violation
+    if args.w_ed_objective is not None:
+        cfg.ablation.loss_weights.ed_objective = args.w_ed_objective
+    if args.w_startup is not None:
+        cfg.ablation.loss_weights.startup = args.w_startup
 
     # Validate config
     validate_config(cfg)
@@ -282,7 +330,7 @@ def main() -> None:
         torch.cuda.manual_seed_all(seed)
 
     # Initialize dataset
-    dataset = Subset(SimpleDataset(data_dir=cfg.dataset.data_dir), range(10))
+    dataset = SimpleDataset(data_dir=cfg.dataset.data_dir)
 
     # Compute split sizes
     n_total = len(dataset)
