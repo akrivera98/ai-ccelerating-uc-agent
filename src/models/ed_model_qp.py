@@ -5,6 +5,48 @@ from scipy.optimize import linprog
 from scipy import sparse
 import numpy as np
 from torch.autograd import Function
+from concurrent.futures import ProcessPoolExecutor
+import os
+
+_G_AUB = None
+_G_AEQ = None
+_G_OPTIONS = None
+
+
+def _init_highs_worker(A_ub, A_eq, highs_time_limit):
+    """
+    Runs once per worker process. Stores large, constant matrices globally in that process
+    so they are not pickled/sent for every LP.
+    """
+    global _G_AUB, _G_AEQ, _G_OPTIONS
+    _G_AUB = A_ub
+    _G_AEQ = A_eq
+    _G_OPTIONS = (
+        {"time_limit": highs_time_limit} if highs_time_limit is not None else None
+    )
+
+
+def _solve_highs_one(args):
+    """
+    Solve a single LP instance with already-initialized global A_ub, A_eq.
+    args = (c, h_ub, b_eq)
+    Returns tuple:
+        (ok, msg, fun, lam_ub, nu_eq)
+    """
+    c, h_ub, b_eq = args
+    res = linprog(
+        c=c,
+        A_ub=_G_AUB,
+        b_ub=h_ub,
+        A_eq=_G_AEQ,
+        b_eq=b_eq,
+        bounds=None,
+        method="highs",
+        options=_G_OPTIONS,
+    )
+    if not res.success:
+        return (False, res.message, None, None, None)
+    return (True, None, float(res.fun), res.ineqlin.marginals, res.eqlin.marginals)
 
 
 class EDShapes:
@@ -665,11 +707,22 @@ class EDModelLP(EDModelQP):
     """
 
     def __init__(
-        self, ed_data_dict, device="cpu", extract_bounds=True, use_sparse=True
+        self,
+        ed_data_dict,
+        device="cpu",
+        extract_bounds=True,
+        use_sparse=True,
+        parallel_solve=True,
+        lp_workers=None,
+        parallel_min_batch=8,
     ):
         super().__init__(ed_data_dict, eps=0.0, device=device)  # eps not used for LP
         self.extract_bounds = extract_bounds
         self.use_sparse = use_sparse
+
+        self.parallel_solve = bool(parallel_solve)
+        self.lp_workers = lp_workers
+        self.parallel_min_batch = int(parallel_min_batch)
 
         # Precompute which inequality rows in G are pure bounds (single nonzero, coeff = +1 or -1)
         with torch.no_grad():
@@ -734,7 +787,22 @@ class EDModelLP(EDModelQP):
 
             self.nz_lp = nz  # convenience
 
-    def forward(
+            # ---- EXISTING: cache reduced G for the non-diff forward() path ----
+            G_keep = self.G[self.keep_row_mask, :]  # (nkeep, nz)
+            G_cpu = G_keep.detach().cpu().numpy()
+            self._G_keep_scipy = sparse.csr_matrix(G_cpu) if self.use_sparse else G_cpu
+
+            # ---- EXISTING: cache A ----
+            A_cpu = self.A.detach().cpu().numpy()
+            self._A_scipy = sparse.csr_matrix(A_cpu) if self.use_sparse else A_cpu
+
+            # ---- NEW: cache FULL G too (for differentiable objective) ----
+            G_full_cpu = self.G.detach().cpu().numpy()
+            self._G_full_scipy = (
+                sparse.csr_matrix(G_full_cpu) if self.use_sparse else G_full_cpu
+            )
+
+    def forward(  # why do you even have this here?
         self,
         load,
         solar_max,
@@ -816,12 +884,8 @@ class EDModelLP(EDModelQP):
 
                 bounds = list(zip(lb.tolist(), ub.tolist()))
             else:
-                # No bound extraction; use full G,h
-                A_ub = (
-                    sparse.csr_matrix(self.G.detach().cpu().numpy())
-                    if self.use_sparse
-                    else self.G.detach().cpu().numpy()
-                )
+                # ---- CHANGED: use cached full G (avoid rebuilding csr each call) ----
+                A_ub = self._G_full_scipy
                 h_ub = h[i].detach().cpu().numpy().astype(np.float64, copy=False)
                 bounds = None
 
@@ -876,7 +940,7 @@ class EDLPObjectiveFn(Function):
     @staticmethod
     def forward(
         ctx,
-        model,
+        model: EDModelLP,
         load,
         solar_max,
         wind_max,
@@ -887,8 +951,8 @@ class EDLPObjectiveFn(Function):
     ):
         """
         Returns f*: (B,) optimal objective value(s).
+        Parallelizes the B independent HiGHS solves across processes when beneficial.
         """
-        # Build p,h,b (and batched inputs)
         p, h, b, load, solar_max, wind_max, is_on, is_charging, is_discharging = (
             model.build_phb(
                 load, solar_max, wind_max, is_on, is_charging, is_discharging
@@ -896,42 +960,69 @@ class EDLPObjectiveFn(Function):
         )
         B = load.shape[0]
 
-        # IMPORTANT: keep bounds extraction OFF for this differentiable objective
-        # (otherwise duals split across ineqlin + bounds, needs extra mapping)
-        A_ub = sparse.csr_matrix(model.G.detach().cpu().numpy())
-        A_eq = sparse.csr_matrix(model.A.detach().cpu().numpy())
+        # ---- CHANGED: reuse cached sparse matrices (avoid rebuilding csr every forward) ----
+        A_ub = model._G_full_scipy
+        A_eq = model._A_scipy
+
+        # ---- CHANGED: convert to numpy ONCE ----
+        c_np = p.detach().cpu().numpy().astype(np.float64, copy=False)  # (B,nz)
+        h_np = h.detach().cpu().numpy().astype(np.float64, copy=False)  # (B,nineq)
+        b_np = b.detach().cpu().numpy().astype(np.float64, copy=False)  # (B,neq)
+
+        # Prepare tasks for each batch item
+        tasks = [(c_np[i], h_np[i], b_np[i]) for i in range(B)]
 
         f_list = []
         lam_ub_list = []
         nu_eq_list = []
 
-        for i in range(B):
-            c = p[i].detach().cpu().numpy().astype(np.float64, copy=False)
-            h_ub = h[i].detach().cpu().numpy().astype(np.float64, copy=False)
-            b_eq = b[i].detach().cpu().numpy().astype(np.float64, copy=False)
+        do_parallel = (
+            model.parallel_solve
+            and B >= model.parallel_min_batch
+            and (os.cpu_count() or 1) > 1
+        )
 
-            res = linprog(
-                c=c,
-                A_ub=A_ub,
-                b_ub=h_ub,
-                A_eq=A_eq,
-                b_eq=b_eq,
-                bounds=None,
-                method="highs",
-                options=(
-                    {"time_limit": highs_time_limit}
-                    if highs_time_limit is not None
-                    else None
-                ),
-            )
-            if not res.success:
-                raise RuntimeError(f"HiGHS LP failed (batch {i}): {res.message}")
+        if not do_parallel:
+            # ---- SERIAL fallback ----
+            for i in range(B):
+                res = linprog(
+                    c=tasks[i][0],
+                    A_ub=A_ub,
+                    b_ub=tasks[i][1],
+                    A_eq=A_eq,
+                    b_eq=tasks[i][2],
+                    bounds=None,
+                    method="highs",
+                    options=(
+                        {"time_limit": highs_time_limit}
+                        if highs_time_limit is not None
+                        else None
+                    ),
+                )
+                if not res.success:
+                    raise RuntimeError(f"HiGHS LP failed (batch {i}): {res.message}")
+                f_list.append(res.fun)
+                lam_ub_list.append(res.ineqlin.marginals)
+                nu_eq_list.append(res.eqlin.marginals)
+        else:
+            # ---- PARALLEL solve across batch items ----
+            max_workers = model.lp_workers
+            if max_workers is None:
+                max_workers = min(os.cpu_count() or 1, B)
 
-            f_list.append(res.fun)
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                initializer=_init_highs_worker,
+                initargs=(A_ub, A_eq, highs_time_limit),
+            ) as ex:
+                outs = list(ex.map(_solve_highs_one, tasks))
 
-            # Duals (SciPy HiGHS)
-            lam_ub_list.append(res.ineqlin.marginals)  # shape (nineq,)
-            nu_eq_list.append(res.eqlin.marginals)  # shape (neq,)
+            for i, (ok, msg, fun, lam, nu) in enumerate(outs):
+                if not ok:
+                    raise RuntimeError(f"HiGHS LP failed (batch {i}): {msg}")
+                f_list.append(fun)
+                lam_ub_list.append(lam)
+                nu_eq_list.append(nu)
 
         device = model.device
         dtype = load.dtype
@@ -950,6 +1041,7 @@ class EDLPObjectiveFn(Function):
             lam_ub, nu_eq, load, solar_max, wind_max, is_on, is_charging, is_discharging
         )
 
+        # shape flags (same as your original)
         ctx.load_was_1d = load.dim() == 1
         ctx.solar_was_1d = solar_max.dim() == 1
         ctx.wind_was_1d = wind_max.dim() == 1
@@ -961,25 +1053,19 @@ class EDLPObjectiveFn(Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        """
-        grad_out: (B,) upstream gradient
-        returns grads for: model, load, solar_max, wind_max, is_on, is_charging, is_discharging, highs_time_limit
-        """
+        # ---- UNCHANGED from your version (kept as-is) ----
         model = ctx.model
         lam_ub, nu_eq, load, solar_max, wind_max, is_on, is_charging, is_discharging = (
             ctx.saved_tensors
         )
 
-        # Apply upstream gradient
         if grad_out.dim() == 0:
             grad_out = grad_out.unsqueeze(0)
         go = grad_out.view(-1, 1)
 
-        # Core sensitivities (assuming SciPy marginals match λ,ν; we’ll verify sign once) # TODO: verify this!!!
         df_dh = lam_ub * go  # (B,nineq)
         df_db = nu_eq * go  # (B,neq)
 
-        # Allocate input grads
         g_load = torch.zeros_like(load)
         g_solar = torch.zeros_like(solar_max)
         g_wind = torch.zeros_like(wind_max)
@@ -987,9 +1073,6 @@ class EDLPObjectiveFn(Function):
         g_is_chg = torch.zeros_like(is_charging)
         g_is_dis = torch.zeros_like(is_discharging)
 
-        # ---- Map inequality RHS sensitivities to inputs ----
-
-        # pg_ub rows: solar_max / wind_max
         for row_id in model.builder.ub_rows.get("pg_ub", []):
             _, (p, t) = model.h_spec[row_id]
             if p == model.pg_idx_solar:
@@ -997,7 +1080,6 @@ class EDLPObjectiveFn(Function):
             elif p == model.pg_idx_wind:
                 g_wind[:, t] += df_dh[:, row_id]
 
-        # storage gating
         for row_id in model.builder.ub_rows.get("st_max_charge", []):
             _, (s, t) = model.h_spec[row_id]
             g_is_chg[:, s, t] += df_dh[:, row_id] * model.st_max_charge[s]
@@ -1014,7 +1096,6 @@ class EDLPObjectiveFn(Function):
             _, (s, t) = model.h_spec[row_id]
             g_is_dis[:, s, t] += df_dh[:, row_id] * (-model.st_min_discharge[s])
 
-        # thermal gating
         for row_id in model.builder.ub_rows.get("pa_ub_on", []):
             _, (g, t) = model.h_spec[row_id]
             g_is_on[:, g, t] += df_dh[:, row_id] * model.th_power_diff[g]
@@ -1023,14 +1104,10 @@ class EDLPObjectiveFn(Function):
             _, (g, t, k) = model.h_spec[row_id]
             g_is_on[:, g, t] += df_dh[:, row_id] * model.th_seg_mw[g, k]
 
-        # curt ub depends on load
         for row_id in model.builder.ub_rows.get("curt_ub", []):
             _, t = model.h_spec[row_id]
             g_load[:, t] += df_dh[:, row_id]
 
-        # ---- Map equality RHS sensitivities to inputs ----
-
-        # power balance row: b = load - sum_g pmin[g]*is_on[g,t]
         for row_id in model.builder.eq_rows.get("power_balance", []):
             _, t = model.b_spec[row_id]
             g_load[:, t] += df_db[:, row_id]
