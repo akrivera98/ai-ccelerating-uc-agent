@@ -90,6 +90,7 @@ class SimpleDataset(Dataset):
                 "is_charging": is_charging,
                 "is_discharging": is_discharging,
             },
+            "gen_names": sorted_gens,
         }
 
     def __getitem__(self, idx: int) -> dict:
