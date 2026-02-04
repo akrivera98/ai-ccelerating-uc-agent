@@ -194,7 +194,7 @@ def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
 
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label("Commitment frequency")
-    
+
     ax.set_xticks(np.arange(G))
     ax.set_xticklabels(gen_names, rotation=90, fontsize=8)
     ax.set_ylabel("Time")
@@ -218,4 +218,187 @@ def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
     plt.tight_layout()
     plt.show()
 
-    return order  # sorted_index -> original_gen_id
+    return gen_names  # sorted gen names
+
+
+def compute_expected_commitment_given_load(
+    dataset: SimpleDataset, n_bins=10, max_load=None, save_path=None, reload=False
+):
+    if save_path is not None and not reload:
+        if os.path.exists(save_path):
+            with open(save_path, "rb") as f:
+                expected_commitment = pickle.load(f)
+            print("Loaded expected commitment from", save_path)
+            return expected_commitment
+
+    if max_load is None:
+        max_load = _get_max_load(dataset)
+
+    n_samples = len(dataset)
+
+    # Load bins
+    load_bin_edges = np.linspace(0, max_load, n_bins + 1)
+    bin_centers = 0.5 * (load_bin_edges[:-1] + load_bin_edges[1:])
+
+    # Accumulators
+    committed_sum = np.zeros(n_bins, dtype=np.float64)  # sum of commitments in each bin
+    counts = np.zeros(n_bins)
+    gen_on_sum = np.zeros((n_bins, dataset[0]["target"]["is_on"].shape[0]))  # n_bins, G
+    bin_gen_counts = np.zeros(n_bins)
+
+    for i in range(n_samples):
+        load_profile = dataset[i]["features"]["profiles"][:, 0].cpu().numpy()  # 72
+        is_on = dataset[i]["target"]["is_on"].T.cpu().numpy()  # T, G
+        committed_t = is_on.sum(axis=1)  # T,
+
+        # Asign each t to a bin
+        bin_id = np.digitize(load_profile, load_bin_edges, right=False) - 1
+        bin_id = np.clip(bin_id, 0, n_bins - 1)
+
+        # Accumulate commitments for each bin
+        np.add.at(committed_sum, bin_id, committed_t)  # sum over committed gens
+        np.add.at(counts, bin_id, 1)
+
+        for b in range(n_bins):
+            mask = bin_id == b
+            if mask.any():
+                gen_on_sum[b] += is_on[mask].sum(axis=0)
+                bin_gen_counts[b] += mask.sum()
+
+    # Compute expectation
+    expected = committed_sum / np.maximum(counts, 1)
+
+    # Gen on probabilities
+    gen_on_prob = gen_on_sum / np.maximum(bin_gen_counts[:, None], 1)
+
+    # Save results
+    if save_path is not None and not reload:
+        with open(save_path, "wb") as f:
+            pickle.dump(
+                {
+                    "load_bin_edges": load_bin_edges,
+                    "bin_centers": bin_centers,
+                    "expected_commitment": expected,
+                    "counts": counts,
+                    "gen_on_prob": gen_on_prob,
+                },
+                f,
+            )
+        print("Saved expected commitment to", save_path)
+
+    return {
+        "load_bin_edges": load_bin_edges,
+        "bin_centers": bin_centers,
+        "expected_commitment": expected,
+        "counts": counts,
+        "gen_on_prob": gen_on_prob,
+        "gen_on_sum": gen_on_sum,
+    }
+
+
+def plot_expected_commitment_given_load(results):
+
+    load_bin_edges = results["load_bin_edges"]
+    bin_centers = results["bin_centers"]
+    expected = results["expected_commitment"]
+    counts = results["counts"]
+
+    # Plot
+    _, ax = plt.subplots(figsize=(12, 6))
+    bin_widths = np.diff(load_bin_edges)
+    ax.bar(bin_centers, expected, width=bin_widths, align="center")
+
+    # Annotate counts on bars
+    for x, y, c in zip(bin_centers, expected, counts):
+        ax.text(x, y, str(int(c)), ha="center", va="bottom", fontsize=8)
+
+    ax.set_xlabel("Load level")
+    ax.set_ylabel("Expected number of committed generators")
+    ax.set_title("Expected number of committed generators given load level")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_gen_commitment_heatmap(result, gen_names, sort=True, annotate=True):
+    """
+    x-axis: generators
+    y-axis: load bins
+    """
+    gen_on_prob = result["gen_on_prob"]  # (n_bins, G)
+    load_bin_edges = result["load_bin_edges"]
+    bin_counts = result["counts"]  # (n_bins,)
+    gen_on_sum = result["gen_on_sum"]  # (n_bins, G)
+
+    n_bins, G = gen_on_prob.shape
+    assert len(gen_names) == G
+
+    # ---- sort generators (columns) ----
+    if sort:
+        gen_scores = gen_on_prob.mean(axis=0)  # (G,)
+        order = np.argsort(-gen_scores)  # descending
+        gen_on_prob = gen_on_prob[:, order]
+        gen_names = [gen_names[g] for g in order]
+        gen_on_sum = gen_on_sum[:, order]
+
+    # ---- y-axis labels: load bins ----
+    bin_centers = 0.5 * (load_bin_edges[:-1] + load_bin_edges[1:])
+    ylabels = [f"{bc:.1f}" for bc in bin_centers]
+
+    fig, ax = plt.subplots(figsize=(30, 12))
+
+    im = ax.imshow(
+        gen_on_prob,
+        aspect="auto",
+        origin="lower",
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+    )
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("P(generator ON | load bin)")
+
+    # ---- ticks ----
+    ax.set_xticks(np.arange(G))
+    ax.set_xticklabels(gen_names, rotation=90, fontsize=8)
+
+    ax.set_yticks(np.arange(n_bins))
+    ax.set_yticklabels(ylabels, fontsize=8)
+
+    ax.set_xlabel("Generator (sorted by average commitment)")
+    ax.set_ylabel("Load level")
+    ax.set_title("Generator commitment probability given load")
+
+    # ---- annotate cells ----
+    if annotate:
+        for b in range(n_bins):
+            for g in range(G):
+                p = gen_on_prob[b, g]
+                n = int(gen_on_sum[b, g])
+                ax.text(
+                    g,
+                    b,
+                    f"{n}",
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    color="black" if p > 0.5 else "white",
+                )
+
+    plt.tight_layout()
+    plt.show()
+
+
+def _get_max_load(dataset: SimpleDataset):
+    seen_max_load = 0.0
+    for i in range(len(dataset)):
+        load_profile = dataset[i]["features"]["profiles"][:, 0]  # 72,
+        max_load = load_profile.max().item()
+        if max_load > seen_max_load:
+            seen_max_load = max_load
+    return seen_max_load
+
+
+# TODO: net load plots
+
+# TODO: storage plots
