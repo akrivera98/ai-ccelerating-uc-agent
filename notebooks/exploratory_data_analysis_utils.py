@@ -231,8 +231,8 @@ def compute_expected_commitment_given_load(
             print("Loaded expected commitment from", save_path)
             return expected_commitment
 
-    if max_load is None:
-        max_load = _get_max_load(dataset)
+    if max_load is None and reload:
+        max_load, min_net_load, max_net_load = _get_max_load(dataset)
 
     n_samples = len(dataset)
 
@@ -240,68 +240,108 @@ def compute_expected_commitment_given_load(
     load_bin_edges = np.linspace(0, max_load, n_bins + 1)
     bin_centers = 0.5 * (load_bin_edges[:-1] + load_bin_edges[1:])
 
-    # Accumulators
+    # Net load bins
+    net_load_bin_edges = np.linspace(min_net_load, max_net_load, n_bins + 1)
+    net_bin_centers = 0.5 * (net_load_bin_edges[:-1] + net_load_bin_edges[1:])
+
+    # Accumulators for gross load
     committed_sum = np.zeros(n_bins, dtype=np.float64)  # sum of commitments in each bin
     counts = np.zeros(n_bins)
-    gen_on_sum = np.zeros((n_bins, dataset[0]["target"]["is_on"].shape[0]))  # n_bins, G
+    gen_on_sum_gross = np.zeros(
+        (n_bins, dataset[0]["target"]["is_on"].shape[0])
+    )  # n_bins, G
     bin_gen_counts = np.zeros(n_bins)
+
+    # Accumulators for net load
+    committed_sum_net = np.zeros(
+        n_bins, dtype=np.float64
+    )  # sum of commitments in each bin
+    counts_net = np.zeros(n_bins)
+    gen_on_sum_net = np.zeros(
+        (n_bins, dataset[0]["target"]["is_on"].shape[0])
+    )  # n_bins, G
+    bin_gen_counts_net = np.zeros(n_bins)
 
     for i in range(n_samples):
         load_profile = dataset[i]["features"]["profiles"][:, 0].cpu().numpy()  # 72
+        wind_profile = dataset[i]["features"]["profiles"][:, 1].cpu().numpy()
+        solar_profile = dataset[i]["features"]["profiles"][:, 2].cpu().numpy()
+        net_load_profile = load_profile - wind_profile - solar_profile
         is_on = dataset[i]["target"]["is_on"].T.cpu().numpy()  # T, G
         committed_t = is_on.sum(axis=1)  # T,
 
         # Asign each t to a bin
+
+        # Gross load binning
         bin_id = np.digitize(load_profile, load_bin_edges, right=False) - 1
         bin_id = np.clip(bin_id, 0, n_bins - 1)
 
+        # Net load binning
+        bin_id_net = np.digitize(net_load_profile, net_load_bin_edges, right=False) - 1
+        bin_id_net = np.clip(bin_id_net, 0, n_bins - 1)
+
         # Accumulate commitments for each bin
+
+        # Accumulation for gross load
         np.add.at(committed_sum, bin_id, committed_t)  # sum over committed gens
         np.add.at(counts, bin_id, 1)
+
+        # Accumulation for net load
+        np.add.at(committed_sum_net, bin_id_net, committed_t)  # sum over committed gens
+        np.add.at(counts_net, bin_id_net, 1)
 
         for b in range(n_bins):
             mask = bin_id == b
             if mask.any():
-                gen_on_sum[b] += is_on[mask].sum(axis=0)
+                # Gross load gen on accumulation
+                gen_on_sum_gross[b] += is_on[mask].sum(axis=0)
                 bin_gen_counts[b] += mask.sum()
 
+            mask_net = bin_id_net == b
+            if mask_net.any():
+                gen_on_sum_net[b] += is_on[mask_net].sum(axis=0)
+                bin_gen_counts_net[b] += mask_net.sum()
+
     # Compute expectation
-    expected = committed_sum / np.maximum(counts, 1)
+    expected_gross = committed_sum / np.maximum(counts, 1)
+    expected_net = committed_sum_net / np.maximum(counts_net, 1)
 
     # Gen on probabilities
-    gen_on_prob = gen_on_sum / np.maximum(bin_gen_counts[:, None], 1)
+    gen_on_prob_gross = gen_on_sum_gross / np.maximum(bin_gen_counts[:, None], 1)
+    gen_on_prob_net = gen_on_sum_net / np.maximum(bin_gen_counts_net[:, None], 1)
 
+    results = {
+        "load_bin_edges_gross": load_bin_edges,
+        "load_bin_edges_net": net_load_bin_edges,
+        "bin_centers_gross": bin_centers,
+        "bin_centers_net": net_bin_centers,
+        "expected_commitment_gross": expected_gross,
+        "expected_commitment_net": expected_net,
+        "counts_gross": counts,
+        "counts_net": counts_net,
+        "gen_on_prob_gross": gen_on_prob_gross,
+        "gen_on_prob_net": gen_on_prob_net,
+        "gen_on_sum_gross": gen_on_sum_gross,
+        "gen_on_sum_net": gen_on_sum_net,
+    }
     # Save results
     if save_path is not None and not reload:
         with open(save_path, "wb") as f:
             pickle.dump(
-                {
-                    "load_bin_edges": load_bin_edges,
-                    "bin_centers": bin_centers,
-                    "expected_commitment": expected,
-                    "counts": counts,
-                    "gen_on_prob": gen_on_prob,
-                },
+                results,
                 f,
             )
         print("Saved expected commitment to", save_path)
 
-    return {
-        "load_bin_edges": load_bin_edges,
-        "bin_centers": bin_centers,
-        "expected_commitment": expected,
-        "counts": counts,
-        "gen_on_prob": gen_on_prob,
-        "gen_on_sum": gen_on_sum,
-    }
+    return results
 
 
-def plot_expected_commitment_given_load(results):
+def plot_expected_commitment_given_load(results):  # Only gross load for now
 
-    load_bin_edges = results["load_bin_edges"]
-    bin_centers = results["bin_centers"]
-    expected = results["expected_commitment"]
-    counts = results["counts"]
+    load_bin_edges = results["load_bin_edges_gross"]
+    bin_centers = results["bin_centers_gross"]
+    expected = results["expected_commitment_gross"]
+    counts = results["counts_gross"]
 
     # Plot
     _, ax = plt.subplots(figsize=(12, 6))
@@ -319,15 +359,24 @@ def plot_expected_commitment_given_load(results):
     plt.show()
 
 
-def plot_gen_commitment_heatmap(result, gen_names, sort=True, annotate=True):
+def plot_gen_commitment_heatmap(
+    result, gen_names, sort=True, annotate=True, net_load=False
+):
     """
     x-axis: generators
     y-axis: load bins
     """
-    gen_on_prob = result["gen_on_prob"]  # (n_bins, G)
-    load_bin_edges = result["load_bin_edges"]
-    bin_counts = result["counts"]  # (n_bins,)
-    gen_on_sum = result["gen_on_sum"]  # (n_bins, G)
+
+    if not net_load:
+        gen_on_prob = result["gen_on_prob_gross"]  # (n_bins, G)
+        load_bin_edges = result["load_bin_edges_gross"]
+        bin_counts = result["counts_gross"]  # (n_bins,)
+        gen_on_sum = result["gen_on_sum_gross"]  # (n_bins, G)
+    else:
+        gen_on_prob = result["gen_on_prob_net"]  # (n_bins, G)
+        load_bin_edges = result["load_bin_edges_net"]
+        bin_counts = result["counts_net"]  # (n_bins,)
+        gen_on_sum = result["gen_on_sum_net"]  # (n_bins, G)
 
     n_bins, G = gen_on_prob.shape
     assert len(gen_names) == G
@@ -367,7 +416,9 @@ def plot_gen_commitment_heatmap(result, gen_names, sort=True, annotate=True):
 
     ax.set_xlabel("Generator (sorted by average commitment)")
     ax.set_ylabel("Load level")
-    ax.set_title("Generator commitment probability given load")
+    ax.set_title(
+        f"Generator commitment probability given {'net' if net_load else 'gross'} load"
+    )
 
     # ---- annotate cells ----
     if annotate:
@@ -391,12 +442,26 @@ def plot_gen_commitment_heatmap(result, gen_names, sort=True, annotate=True):
 
 def _get_max_load(dataset: SimpleDataset):
     seen_max_load = 0.0
+    seen_min_net_load = float("inf")
+    seen_max_net_load = float("-inf")
     for i in range(len(dataset)):
         load_profile = dataset[i]["features"]["profiles"][:, 0]  # 72,
+        wind_profile = dataset[i]["features"]["profiles"][:, 1]
+        solar_profile = dataset[i]["features"]["profiles"][:, 2]
         max_load = load_profile.max().item()
+        min_net_load = (load_profile - wind_profile - solar_profile).min().item()
+        max_net_load = (load_profile - wind_profile - solar_profile).max().item()
         if max_load > seen_max_load:
             seen_max_load = max_load
-    return seen_max_load
+        if min_net_load < seen_min_net_load:
+            seen_min_net_load = min_net_load
+        if max_net_load > seen_max_net_load:
+            seen_max_net_load = max_net_load
+
+    print(
+        f"Determined max load: {seen_max_load}, min net load: {seen_min_net_load}, max net load: {seen_max_net_load}"
+    )
+    return seen_max_load, seen_min_net_load, seen_max_net_load
 
 
 # TODO: net load plots
