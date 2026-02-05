@@ -55,33 +55,14 @@ class SimpleDataset(Dataset):
         sorted_gens = sorted(df_targets.columns)
         df_targets = df_targets[sorted_gens]
 
-        # Build features tensor
-        demand = torch.tensor(df_profiles["demand"].values, dtype=torch.float32)
-        wind = torch.tensor(df_profiles["wind"].values, dtype=torch.float32)
-        solar = torch.tensor(df_profiles["solar"].values, dtype=torch.float32)
-        gen_init_power = torch.tensor(
-            df_init_conditions["initial_power"].values, dtype=torch.float32
-        )
-        gen_init_status = torch.tensor(
-            df_init_conditions["initial_status"].values, dtype=torch.float32
-        )
-
-        features = torch.cat(
-            [demand, wind, solar, gen_init_power, gen_init_status], dim=0
-        )  # dims (72 * 3 + 51 * 2, )
-
-        # Build targets tensor
-        target = torch.tensor(df_targets.to_numpy(), dtype=torch.float32).reshape(
-            -1
-        )  # dims (72 * 51, )
-
+        # Build features tensors
         profiles = torch.tensor(
             df_profiles.iloc[:, 1:].to_numpy(), dtype=torch.float32
-        )  # (72, 3) if demand/wind/solar
+        )  # (72, 3) demand/wind/solar
         init_conds = torch.tensor(
             df_init_conditions.iloc[:, 1:].to_numpy(), dtype=torch.float32
-        )  # (51, 2) e.g. (init_power, init_status)
-        y = torch.tensor(df_targets.to_numpy(), dtype=torch.float32).T
+        ).T  # (2, 51) e.g. (init_power, init_status)
+        y = torch.tensor(df_targets.to_numpy(), dtype=torch.float32)
 
         return {
             "features": {"profiles": profiles, "initial_conditions": init_conds},
@@ -123,8 +104,8 @@ class SimpleDataset(Dataset):
         T = 72
         EPS = 1e-3  # small threshold to determine if charging/discharging
 
-        is_charging = torch.zeros((S, T), dtype=torch.float32)
-        is_discharging = torch.zeros((S, T), dtype=torch.float32)
+        is_charging = torch.zeros((T, S), dtype=torch.float32)
+        is_discharging = torch.zeros((T, S), dtype=torch.float32)
 
         for i, s_name in enumerate(storage_names):
             charge_rates = torch.tensor(charging_dict[s_name], dtype=torch.float32)
@@ -132,8 +113,8 @@ class SimpleDataset(Dataset):
                 discharging_dict[s_name], dtype=torch.float32
             )
 
-            is_charging[i, :] = (charge_rates > EPS).float()
-            is_discharging[i, :] = (discharge_rates > EPS).float()
+            is_charging[:, i] = (charge_rates > EPS).float()
+            is_discharging[:, i] = (discharge_rates > EPS).float()
         assert torch.all(is_charging * is_discharging == 0), (
             "Storage units cannot charge and discharge simultaneously."
         )
