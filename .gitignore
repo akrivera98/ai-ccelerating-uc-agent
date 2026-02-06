@@ -1,5 +1,10 @@
 data/
 *.pyc
+submission/
+results/
+.vscode/
+.cursor/
+*.pyc
 results/
 *.DS_Store
 */__pycache__

@@ -4,6 +4,7 @@ import os
 import torch
 from tqdm import tqdm
 import yaml
+from src.models.simple_mlp import SimpleMLP
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
 import src.models.fnn as models
