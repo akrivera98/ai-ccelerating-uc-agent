@@ -7,6 +7,7 @@ import inspect
 import gzip
 import json
 import numpy as np
+from src.models.simple_mlp import SimpleMLP
 
 # Class definitions from src/models (extracted automatically)
 class MLP_with_rounding(nn.Module):
@@ -180,9 +181,6 @@ class thresholdBinarize(nn.Module):
         smoothed_round = torch.sigmoid(self.slope * diff)
         # apply the STE trick to keep the gradient
         return hard_round + (smoothed_round - smoothed_round.detach())
-
-
-
 
 # Wrapper class
 class model:
