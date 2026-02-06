@@ -8,8 +8,6 @@ from src.models.components import (
 )
 from cvxpylayers.jax import CvxpyLayer as JaxCvxpyLayer
 
-
-
 class UCModel:
     def __init__(self, data_dict):
         """

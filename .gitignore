@@ -10,3 +10,9 @@ results/
 */__pycache__
 *logs/
 *.pkl
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.uv_cache/
+.uv_data/

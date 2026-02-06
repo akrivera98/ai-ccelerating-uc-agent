@@ -1,35 +1,15 @@
 [project]
 name = "ai-ccelerating-uc-agent"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = "==3.12.*"
+version = "0.0.0"
+requires-python = ">=3.11.*"
 dependencies = [
-    "dill==0.4.0",
-    "ipdb>=0.13.13",
-    "matplotlib>=3.10.7",
-    "openpyxl==3.1.5",
-    "pandas==2.3.3",
-    "pyyaml==6.0.3",
-    "torch==2.9.1",
-    "tqdm>=4.67.1",
-    "cvxpylayers",
-    "juliacall>=0.9.31",
-    "diffqcp[gpu]>=0.4.4",
-    "cvxpy>=1.7.4",
-    "diffcp>=1.1.0",
-    "numpy>=1.22.4",
-    "scipy>=1.13.0",
-    "cupy-cuda12x>=13.6.0",
-    "equinox>=0.13.2",
-    "jaxtyping>=0.3.5",
-    "lineax",
+    "dill>=0.4.1",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.0",
+    "pyyaml>=6.0.3",
+    "torch==2.10.0",
+    "tqdm>=4.67.3",
 ]
 
 [tool.setuptools]
-packages = ["src"]
-
-[tool.uv.sources]
-cvxpylayers = { git = "https://github.com/cvxpy/cvxpylayers.git" }
-lineax = { git = "https://github.com/patrick-kidger/lineax.git" }
-diffqcp = { git = "https://github.com/cvxgrp/diffqcp.git" }
+packages = ["src", "src.models", "src.datasets", "src.utils"]

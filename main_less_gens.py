@@ -7,7 +7,6 @@ import yaml
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
 import src.models.fnn as models
-from src.models.ed_model_qp import EDModelLP
 from src.models.data_classes import create_data_dict
 from collections import defaultdict
 from src.utils.losses import CustomLoss
@@ -110,6 +109,15 @@ class Config:
             if isinstance(value, dict):
                 value = Config(value)  # recursively convert nested dicts
             setattr(self, key, value)
+
+    def to_dict(self):
+        out = {}
+        for k, v in self.__dict__.items():
+            if isinstance(v, Config):
+                out[k] = v.to_dict()
+            else:
+                out[k] = v
+        return out
 
     def __repr__(self):
         return f"{self.__dict__}"
@@ -351,7 +359,7 @@ def main() -> None:
 
     # Instantiate ED layer
     ed_data_dict = create_data_dict(cfg.dataset.ed_instance_path)
-    ed_layer = EDModelLP(ed_data_dict)
+    ed_layer = None
 
     # Loss and optimizer
     criterion = CustomLoss(
@@ -506,8 +514,9 @@ def main() -> None:
     config_save_path = os.path.join(
         base_save_path, cfg.experiment.name, timestamp, "config.yaml"
     )
+
     with open(config_save_path, "w") as f:
-        yaml.dump(cfg, f)
+        yaml.safe_dump(cfg.to_dict(), f, sort_keys=False)
     print(f"Config saved to {config_save_path}")
 
 

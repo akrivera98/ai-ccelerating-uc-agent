@@ -1,6 +1,6 @@
 # -- Experiment metadata --
 experiment:
-  name: "all_generators_w_violations"
+  name: "testing_scoring"
   notes: "just trying stuff out"
 
 seed: 42
@@ -57,7 +57,7 @@ ablation:
 
 # -- Training --
 training: 
-  num_epochs: 50
+  num_epochs: 1
   optimizer: "Adam"
   learning_rate: 1.0e-3
   val_every: 5 # 0 = off

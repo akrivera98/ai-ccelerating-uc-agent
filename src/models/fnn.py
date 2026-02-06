@@ -1,9 +1,10 @@
 from torch import nn
 import torch
 import torch.nn.functional as F
-from typing import Dict, Optional, Sequence
+from typing import Optional, Sequence
 
 from src.models.round import ste_round
+
 
 class SimpleMLP(nn.Module):
     def __init__(
@@ -150,6 +151,7 @@ class TwoHeadMLP(nn.Module):
             "storage_logits": storage_logits,  # to be used in the loss
         }
 
+
 class TwoHeadMLP_Flex(nn.Module):
     def __init__(
         self,
@@ -172,6 +174,9 @@ class TwoHeadMLP_Flex(nn.Module):
         round_storage: str = "gumbel",
     ):
         super().__init__()
+        import torch as _torch
+
+        self.torch = _torch
         self.T, self.G, self.S = T, G, S
         self.tau = tau
         self.predict_storage = predict_storage
@@ -186,17 +191,21 @@ class TwoHeadMLP_Flex(nn.Module):
 
         if gen_names is not None:
             if gen_names_all is None:
-                raise ValueError("If gen_names is provided, you must also provide gen_names_all.")
+                raise ValueError(
+                    "If gen_names is provided, you must also provide gen_names_all."
+                )
             name_to_idx = {name: i for i, name in enumerate(gen_names_all)}
             missing = [n for n in gen_names if n not in name_to_idx]
             if missing:
-                raise ValueError(f"gen_names contains unknown names: {missing[:5]} (showing up to 5)")
+                raise ValueError(
+                    f"gen_names contains unknown names: {missing[:5]} (showing up to 5)"
+                )
             gen_idx = [name_to_idx[n] for n in gen_names]
 
         if gen_idx is None:
             gen_idx = list(range(G))
 
-        self.register_buffer("gen_idx", torch.tensor(gen_idx))
+        self.register_buffer("gen_idx", self.torch.tensor(gen_idx))
         self.G_out = len(gen_idx)
 
         # ---- trunk ----
@@ -207,10 +216,11 @@ class TwoHeadMLP_Flex(nn.Module):
 
         # ---- heads ----
         self.thermal_head = nn.Linear(hidden_size, T * self.G_out)
-        self.storage_head = nn.Linear(hidden_size, T * S * 3) if predict_storage else None
+        self.storage_head = (
+            nn.Linear(hidden_size, T * S * 3) if predict_storage else None
+        )
 
-
-    def _round_thermal(self, probs: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
+    def _round_thermal(self, probs, logits):
         """
         probs/logits shape: (B, T, G_out)
         returns decisions shape: (B, T, G_out)
@@ -219,19 +229,24 @@ class TwoHeadMLP_Flex(nn.Module):
             return probs
 
         if self.round_thermal == "threshold_ste":
-            return ste_round(probs)
+            # STE only matters during training (for gradients).
+            # During eval/inference we do a hard threshold (pickle-safe).
+            if self.training:
+                return ste_round(probs)
+            else:
+                return (probs > self.thermal_threshold).float()
 
-        if self.round_thermal == "gumbel": # TODO: check this
+        if self.round_thermal == "gumbel":  # TODO: check this
             # treat each on/off as a 2-class problem (off/on) per entry
             # logits2 shape: (B, T, G_out, 2)
-            off_logits = torch.zeros_like(logits)
-            logits2 = torch.stack([off_logits, logits], dim=-1)
+            off_logits = self.torch.zeros_like(logits)
+            logits2 = self.torch.stack([off_logits, logits], dim=-1)
             y = F.gumbel_softmax(logits2, tau=self.tau, hard=True, dim=-1)
             return y[..., 1]
 
         raise ValueError(f"Unknown round_thermal='{self.round_thermal}'")
 
-    def _storage_outputs(self, h: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def _storage_outputs(self, h):
         """
         returns:
           storage_logits: (B, T, S, 3)
@@ -256,28 +271,34 @@ class TwoHeadMLP_Flex(nn.Module):
             "storage_probs": y,
         }
 
-
-    def forward(self, x: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, x):
         B = x["profiles"].shape[0]
 
         # Expect profiles shaped like (B, T, ...) and initial_conditions (B, ...)
         profiles = x["profiles"].reshape(B, -1)
-        init_conds = x["initial_conditions"].reshape(B, -1) # TODO: check init conds shape
-        feats = torch.cat([profiles, init_conds], dim=-1)
+        init_conds = x["initial_conditions"].reshape(
+            B, -1
+        )  # TODO: check init conds shape
+        feats = self.torch.cat([profiles, init_conds], dim=-1)
 
         h = self.trunk(feats)
 
         # ---- thermal ----
-        thermal_logits = self.thermal_head(h).view(B, self.T, self.G_out)  # (B, T, G_out)
-        thermal_probs = torch.sigmoid(thermal_logits)
-        thermal_decisions = self._round_thermal(thermal_probs, thermal_logits)  # (B, T, G_out)
+        thermal_logits = self.thermal_head(h).view(
+            B, self.T, self.G_out
+        )  # (B, T, G_out)
+        thermal_probs = self.torch.sigmoid(thermal_logits)
+        thermal_decisions = self._round_thermal(
+            thermal_probs, thermal_logits
+        )  # (B, T, G_out)
 
         # scatter back to full (B, T, G) if requested and subset is used
         if self.return_full_is_on and self.G_out != self.G:
-            is_on_full = torch.zeros(
-                B, self.T, self.G,
+            is_on_full = self.torch.zeros(
+                B,
+                self.T,
+                self.G,
                 device=thermal_decisions.device,
-                dtype=thermal_decisions.dtype,
             )
             is_on_full[:, :, self.gen_idx] = thermal_decisions
             is_on_out = is_on_full

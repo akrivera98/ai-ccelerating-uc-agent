@@ -1,336 +1,278 @@
-import torch
-import torch.nn as nn
-import pandas as pd
-import dill
-import yaml
-import inspect
 import gzip
 import json
-import numpy as np
-from src.models.simple_mlp import SimpleMLP
+from pathlib import Path
+from typing import Dict, Optional, Sequence
 
-# Class definitions from src/models (extracted automatically)
-class MLP_with_rounding(nn.Module):
+import dill
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import yaml
+
+# ---- Extracted model definition ----
+class TwoHeadMLP_Flex(nn.Module):
     def __init__(
         self,
         input_size: int,
         hidden_size: int,
-        output_size: int,
         num_hidden_layers: int,
-        rounding_strategy: str,
+        T: int = 72,
+        G: int = 51,
+        S: int = 14,
+        tau: float = 1.0,
+        predict_storage: bool = True,
+        # --- subset selection ---
+        gen_idx: Optional[Sequence[int]] = None,
+        gen_names: Optional[Sequence[str]] = None,
+        gen_names_all: Optional[Sequence[str]] = None,  # full ordered list length G
+        return_full_is_on: bool = True,
+        # --- rounding ---
+        round_thermal: str = "none",
+        thermal_threshold: float = 0.5,
+        round_storage: str = "gumbel",
     ):
         super().__init__()
-        self.rounding_strategy = rounding_strategy
+        import torch as _torch
 
-        ff_layers = []
-        round_layers = []
-        # Input layer
-        ff_layers.append(nn.Linear(input_size, hidden_size))
-        ff_layers.append(nn.ReLU())
-        round_layers.append(nn.Linear(input_size + output_size, hidden_size))
+        self.torch = _torch
+        self.T, self.G, self.S = T, G, S
+        self.tau = tau
+        self.predict_storage = predict_storage
+        self.return_full_is_on = return_full_is_on
+        self.round_thermal = round_thermal
+        self.thermal_threshold = thermal_threshold
+        self.round_storage = round_storage
 
-        # Hidden layers
+        # ---- resolve generator subset ----
+        if gen_idx is not None and gen_names is not None:
+            raise ValueError("Provide only one of gen_idx or gen_names, not both.")
+
+        if gen_names is not None:
+            if gen_names_all is None:
+                raise ValueError(
+                    "If gen_names is provided, you must also provide gen_names_all."
+                )
+            name_to_idx = {name: i for i, name in enumerate(gen_names_all)}
+            missing = [n for n in gen_names if n not in name_to_idx]
+            if missing:
+                raise ValueError(
+                    f"gen_names contains unknown names: {missing[:5]} (showing up to 5)"
+                )
+            gen_idx = [name_to_idx[n] for n in gen_names]
+
+        if gen_idx is None:
+            gen_idx = list(range(G))
+
+        self.register_buffer("gen_idx", self.torch.tensor(gen_idx))
+        self.G_out = len(gen_idx)
+
+        # ---- trunk ----
+        layers = [nn.Linear(input_size, hidden_size), nn.ReLU()]
         for _ in range(num_hidden_layers - 1):
-            ff_layers.append(nn.Linear(hidden_size, hidden_size))
-            ff_layers.append(nn.ReLU())
-            round_layers.append(nn.Linear(hidden_size, hidden_size))
-            round_layers.append(nn.ReLU())
+            layers += [nn.Linear(hidden_size, hidden_size), nn.ReLU()]
+        self.trunk = nn.Sequential(*layers)
 
-        # Output layer
-        ff_output_layer = nn.Linear(hidden_size, output_size)
-        round_layers.append(nn.Linear(hidden_size, output_size))
-        ff_layers.append(ff_output_layer)
-        # Remove for MSELoss
-        # ff_layers.append(nn.Sigmoid())
+        # ---- heads ----
+        self.thermal_head = nn.Linear(hidden_size, T * self.G_out)
+        self.storage_head = (
+            nn.Linear(hidden_size, T * S * 3) if predict_storage else None
+        )
 
+    def _round_thermal(self, probs, logits):
+        """
+        probs/logits shape: (B, T, G_out)
+        returns decisions shape: (B, T, G_out)
+        """
+        if self.round_thermal == "none":
+            return probs
 
-        self.ff_net = nn.Sequential(*ff_layers)
-        self.round_net = RoundModel(nn.Sequential(*round_layers), rounding_strategy=rounding_strategy)
-        
-        # Initialize final layer with smaller weights to prevent sigmoid saturation
-        # This keeps outputs in a learnable range (not too close to 0 or 1)
-        nn.init.xavier_uniform_(ff_output_layer.weight, gain=0.1)  # Small gain prevents saturation
-        nn.init.zeros_(ff_output_layer.bias)
+        if self.round_thermal == "threshold_ste":
+            # STE only matters during training (for gradients).
+            # During eval/inference we do a hard threshold (pickle-safe).
+            if self.training:
+                return ste_round(probs)
+            else:
+                return (probs > self.thermal_threshold).float()
 
-    def forward(self, x):
-        p = self.ff_net(x)
-        return self.round_net(p, x)
-    
-class RoundModel(nn.Module):
-    """
-    Learnable model to round integer variables
-    """
-    def __init__(self, net, rounding_strategy="", tolerance=1e-3):
-        super(RoundModel, self).__init__()
-        # numerical tolerance
-        self.tolerance = tolerance
-        self.round_strat = rounding_strategy
-        # autograd functions
-        self.floor = diffFloor()
-        if self.round_strat == "RC":
-            self.bin = diffGumbelBinarize(temperature=1.0)
-        elif self.round_strat == "LT":
-            self.bin = thresholdBinarize()
+        if self.round_thermal == "gumbel":  # TODO: check this
+            # treat each on/off as a 2-class problem (off/on) per entry
+            # logits2 shape: (B, T, G_out, 2)
+            off_logits = self.torch.zeros_like(logits)
+            logits2 = self.torch.stack([off_logits, logits], dim=-1)
+            y = F.gumbel_softmax(logits2, tau=self.tau, hard=True, dim=-1)
+            return y[..., 1]
+
+        raise ValueError(f"Unknown round_thermal='{self.round_thermal}'")
+
+    def _storage_outputs(self, h):
+        """
+        returns:
+          storage_logits: (B, T, S, 3)
+          is_charging:    (B, T, S)
+          is_discharging: (B, T, S)
+          storage_probs:  (B, T, S, 3)
+        """
+        storage_logits = self.storage_head(h).view(-1, self.T, self.S, 3)
+
+        if self.round_storage == "none":
+            # soft probabilities per class
+            y = F.softmax(storage_logits, dim=-1)
+        elif self.round_storage == "gumbel":
+            y = F.gumbel_softmax(storage_logits, tau=self.tau, hard=True, dim=-1)
         else:
-            raise ValueError(f"Unknown rounding strategy: {rounding_strategy}")
-        # sequence
-        self.net = net
+            raise ValueError(f"Unknown round_storage='{self.round_storage}'")
 
-    def forward(self, sol, x):
-        # concatenate all features: sol + features
-        f = torch.cat([x, sol], dim=-1)
-        # forward
-        h = self.net(f)
-        # rounding
-    
-        sol_hat = self.floor(sol)
-        mask = torch.isclose(sol, torch.tensor(0.0), rtol=1e-4) | \
-            torch.isclose(sol, torch.tensor(1.0), rtol=1e-4)
-        if self.round_strat == "RC":
-            v = self.bin(h)[~mask]
-        elif self.round_strat == "LT":
-            r = (sol[~mask] - sol_hat[~mask]) - h[~mask]
-            v = self.bin(r)
+        return {
+            "storage_logits": storage_logits,
+            "is_charging": y[..., 1],
+            "is_discharging": y[..., 2],
+            "storage_probs": y,
+        }
+
+    def forward(self, x):
+        B = x["profiles"].shape[0]
+
+        # Expect profiles shaped like (B, T, ...) and initial_conditions (B, ...)
+        profiles = x["profiles"].reshape(B, -1)
+        init_conds = x["initial_conditions"].reshape(
+            B, -1
+        )  # TODO: check init conds shape
+        feats = self.torch.cat([profiles, init_conds], dim=-1)
+
+        h = self.trunk(feats)
+
+        # ---- thermal ----
+        thermal_logits = self.thermal_head(h).view(
+            B, self.T, self.G_out
+        )  # (B, T, G_out)
+        thermal_probs = self.torch.sigmoid(thermal_logits)
+        thermal_decisions = self._round_thermal(
+            thermal_probs, thermal_logits
+        )  # (B, T, G_out)
+
+        # scatter back to full (B, T, G) if requested and subset is used
+        if self.return_full_is_on and self.G_out != self.G:
+            is_on_full = self.torch.zeros(
+                B,
+                self.T,
+                self.G,
+                device=thermal_decisions.device,
+            )
+            is_on_full[:, :, self.gen_idx] = thermal_decisions
+            is_on_out = is_on_full
         else:
-            raise ValueError(f"Unknown rounding strategy: {self.round_strat}")
-        sol_hat[~mask] += v
-        return torch.clamp(sol_hat, 0.0, 1.0)
+            is_on_out = thermal_decisions  # (B, T, G_out) or (B, T, G)
 
-    def freeze(self):
-        """
-        Freezes the parameters of the callable in this node
-        """
-        for param in self.layers.parameters():
-            param.requires_grad = False
+        out = {
+            "is_on": is_on_out,
+            "thermal_logits": thermal_logits,
+            "thermal_probs": thermal_probs,
+            "gen_idx": self.gen_idx,
+        }
 
-    def unfreeze(self):
-        """
-        Unfreezes the parameters of the callable in this node
-        """
-        for param in self.layers.parameters():
-            param.requires_grad = True
-class diffFloor(nn.Module):
-    """
-    An autograd model to floor numbers that applies a straight-through estimator
-    for the backward pass.
-    """
-    def __init__(self):
-        super(diffFloor, self).__init__()
+        # ---- storage (optional, time-first) ----
+        if self.predict_storage:
+            out.update(self._storage_outputs(h))
 
-    def forward(self, x):
-        # floor
-        x_floor = torch.floor(x).float()
-        # apply the STE trick to keep the gradient
-        return x_floor + (x - x.detach())
+        return out
 
 
-class diffGumbelBinarize(nn.Module):
-    """
-    An autograd function to binarize numbers using the Gumbel-Softmax trick,
-    allowing gradients to be backpropagated through discrete variables.
-    """
-    def __init__(self, temperature=1.0, eps=1e-9):
-        super(diffGumbelBinarize, self).__init__()
-        self.temperature = temperature
-        self.eps = eps
-
-    def forward(self, x):
-        # train mode
-        if self.training:
-            # Gumbel sampling
-            gumbel_noise0 = self._gumbelSample(x)
-            gumbel_noise1 = self._gumbelSample(x)
-            # sigmoid with Gumbel
-            noisy_diff = x + gumbel_noise1 - gumbel_noise0
-            soft_sample = torch.sigmoid(noisy_diff / self.temperature)
-            # hard rounding
-            hard_sample = (soft_sample > 0.5).float()
-            # apply the STE trick to keep the gradient
-            return hard_sample + (soft_sample - soft_sample.detach())
-        # eval mode
-        else:
-            # use a temperature-scaled sigmoid in evaluation mode for consistency
-            return (torch.sigmoid(x / self.temperature) > 0.5).float()
-
-    def _gumbelSample(self, x):
-        """
-        Generates Gumbel noise based on the input shape and device
-        """
-        u = torch.rand_like(x)
-        return - torch.log(- torch.log(u + self.eps) + self.eps)
-
-
-
-class thresholdBinarize(nn.Module):
-    """
-    An autograd function smoothly rounds the elements in `x` based on the
-    corresponding values in `threshold` using a sigmoid function.
-    """
-    def __init__(self, threshold=0.5, slope=10):
-        super(thresholdBinarize, self).__init__()
-        self.slope = slope
-        self.threshold = torch.tensor([threshold])
-
-    def forward(self, x):
-        # ensure the threshold_tensor values are between 0 and 1
-        threshold = torch.clamp(self.threshold, 0, 1)
-        # hard rounding
-        hard_round = (x >= self.threshold).float()
-        # calculate the difference and apply the sigmoid function
-        diff = x - threshold
-        smoothed_round = torch.sigmoid(self.slope * diff)
-        # apply the STE trick to keep the gradient
-        return hard_round + (smoothed_round - smoothed_round.detach())
-
-# Wrapper class
+# ---- Wrapper class expected by the competition ----
 class model:
-    def __init__(self, model, generators):
+    def __init__(self, model: nn.Module, generators: Dict[str, tuple], gen_order: list[str]):
+        import torch as _torch
+        self.torch = _torch
         self.model = model
         self.generators = generators
-        self.generator_names = list(generators.keys())
+        self.generator_names = gen_order  # canonical order
+        self.model.eval()
 
-    def transform_features(self, features):
-        import torch
+    def transform_features(self, features_one):
+        torch = self.torch
+        import numpy as np
+        df_profiles = features_one["Profiles"]
+        df_init = features_one["Initial_Conditions"]
 
-        # Convert features dict of DataFrame to tensor
-        df_profiles = features["Profiles"]
-        df_init_conditions = features["Initial_Conditions"]
-        demand = torch.tensor(df_profiles["demand"].values, dtype=torch.float32)
-        wind = torch.tensor(df_profiles["wind"].values, dtype=torch.float32)
-        solar = torch.tensor(df_profiles["solar"].values, dtype=torch.float32)
-        gen_init_power = torch.tensor(df_init_conditions["initial_power"].values, dtype=torch.float32)
-        gen_init_status = torch.tensor(df_init_conditions["initial_status"].values, dtype=torch.float32)
-        x = torch.cat([demand, wind, solar, gen_init_power, gen_init_status], dim=0)
-        return x
+        # profiles: (72,3) from col 1 onward
+        prof_np = df_profiles.to_numpy(dtype=np.float32)
+        profiles = torch.from_numpy(prof_np).unsqueeze(0)  # (1,72,3)
 
-    def transform_predictions(self, predictions):
-        status_array = predictions.cpu().numpy().reshape(72, 51)
-        return pd.DataFrame(status_array, index=range(72), columns=self.generator_names)
+        # initial conditions: reorder gens to gen_order, then transpose to (1,2,51)
+        # Assumes generator names are the index; if not, uncomment next line:
+        # df_init = df_init.set_index(df_init.columns[0])
 
-    def predict(self, features) -> dict[str, pd.DataFrame]:
-        import torch
+        df_init = df_init.loc[self.generator_names]
+        init_np = df_init.to_numpy(dtype=np.float32)  # (51,2)
+        init_conds = torch.from_numpy(init_np).T.unsqueeze(0)     # (1,2,51)
 
-        status = {}
-        for instance_index in features.keys():
-            x = self.transform_features(features[instance_index])
-            with torch.no_grad():
-                self.model.eval()
+        return {"profiles": profiles, "initial_conditions": init_conds}
+
+    def transform_predictions(self, is_on: torch.Tensor) -> pd.DataFrame:
+        torch = self.torch
+        arr = is_on.detach().cpu().numpy().reshape(72, 51)
+        return pd.DataFrame(arr, index=range(72), columns=self.generator_names)
+
+    def predict(self, features):
+        torch = self.torch
+        out = {}
+        self.model.eval()
+        with torch.no_grad():
+            for instance_index in features.keys():
+                x = self.transform_features(features[instance_index])
                 pred = self.model(x)
-            status[instance_index] = self.repair_feasibility(features[instance_index], self.transform_predictions(pred))
-        return status
 
-    def repair_feasibility(self, features, status_df) -> pd.DataFrame:
-        repaired_df = status_df.copy()
-        df_init_conditions = features["Initial_Conditions"]
-        initial_of_gen = dict(zip(df_init_conditions.index, df_init_conditions["initial_status"].values))
-        for gen_name, (min_down, min_up) in self.generators.items():
-            status = status_df[gen_name].values.copy().astype(int)
-            init_status = int(initial_of_gen[gen_name])
-            min_down = int(min_down)
-            min_up = max(2, int(min_up))
-            # print(gen_name, min_down, min_up, init_status)
-            # Handle initial status constraint
-            if init_status > 0:
-                # Must stay ON for remaining up time
-                remaining = max(0, min_up - init_status)
-                status[:remaining] = 1
-                current_state = 1
-                time_in_state = init_status + remaining
-            elif init_status < 0:
-                # Must stay OFF for remaining down time
-                remaining = max(0, min_down - abs(init_status))
-                status[:remaining] = 0
-                current_state = 0
-                time_in_state = abs(init_status) + remaining
-            
-            # Process from the point after initial constraint
-            start_idx = remaining
-            for i in range(start_idx, len(status)):
-                window_length = min_up if current_state == 1 else min_down
-
-                if time_in_state < window_length:
-                    time_in_state += 1
+                if isinstance(pred, dict) and "is_on" in pred:
+                    is_on = pred["is_on"].squeeze(0)
                 else:
-                    lookahead_window = status[i:min(i + window_length, len(status))]
-                    if np.sum(lookahead_window == current_state) >= np.sum(lookahead_window != current_state):
-                        time_in_state += 1
-                    else:
-                        current_state = abs(current_state - 1)
-                        time_in_state = 1
-                status[i] = current_state
+                    is_on = pred.squeeze(0) if hasattr(pred, "ndim") and pred.ndim == 3 else pred
 
-            repaired_df[gen_name] = status
-        return repaired_df
+                df = self.transform_predictions(is_on)
+                out[instance_index] = df
+                # out[instance_index] = self.repair_feasibility(features[instance_index], df)
+        return out
+
 
 def main():
-    # results path
-    results_path = "results/simple_no_round/20251114_104110"
+    results_path = "results/testing_scoring/20260205_222033"
 
-    config_path = f"{results_path}/config.yaml"
+    # ---- load clean config ----
+    with open(f"{results_path}/config.yaml", "r") as f:
+        cfg = yaml.safe_load(f)
 
-    with open(config_path, "r") as f:
-        raw = f.read()
+    hp = cfg["model"]["hyper_params"]
 
-    # Remove the python/object tags
-    cleaned = raw.replace("!!python/object:__main__.Config", "")
+    # ---- instantiate + load weights ----
+    m = TwoHeadMLP_Flex(**hp)
+    sd = torch.load(f"{results_path}/simple_mlp_state.pt", map_location="cpu")
+    m.load_state_dict(sd)
+    m.eval()
 
-    config = yaml.safe_load(cleaned)
+    # ---- generator metadata + canonical order ----
+    with gzip.open("data/Train_Data/instance_2021_Q1_1/InputData.json.gz", "r") as f:
+        data = json.loads(f.read().decode("utf-8"))
 
-    # Get model parameters
-    model_params = config["model"]
-    input_size = model_params["input_size"]
-    hidden_size = model_params["hidden_size"]
-    num_hidden_layers = model_params["num_hidden_layers"]
-    output_size = model_params["output_size"]
-    final_activation = model_params["final_activation"]
+    # Use JSON generator order as canonical (you said you want JSON order)
+    generators_all = data["Generators"]
+    gen_order = list(generators_all.keys())
 
-    # Instantiate the model
-    simple_net = SimpleMLP(
-        input_size=input_size,
-        hidden_size=hidden_size,
-        num_hidden_layers=num_hidden_layers,
-        output_size=output_size,
-        final_activation=final_activation,
-    )
+    # If you need to restrict to the 51 thermal generators used in scoring,
+    # filter using Response_Variables.xlsx:
+    resp_cols = pd.read_excel("data/Train_Data/instance_2021_Q1_1/Response_Variables.xlsx").columns[1:].tolist()
+    resp_set = set(resp_cols)
+    gen_order = sorted([g for g in gen_order if g in resp_set])
 
-    simple_net.load_state_dict(torch.load(f"{results_path}/simple_mlp_state.pt"))
-
-    # get generator names
-    response_vars_filename = (
-        "data/starting_kit/Train_Data/instance_2021_Q1_1/Response_Variables.xlsx"
-    )
-    gen_names = pd.read_excel(response_vars_filename).columns[1:].tolist()
-
-    wrapped = model(model=simple_net, generator_names=gen_names)
-
-    # try to predict on a sample input
-    sample_input = {
-        "instance_2021_Q1_1": {
-            "Profiles": pd.read_excel(
-                "data/starting_kit/Train_Data/instance_2021_Q1_1/explanatory_variables.xlsx",
-                sheet_name="Profiles",
-            ),
-            "Initial_Conditions": pd.read_excel(
-                "data/starting_kit/Train_Data/instance_2021_Q1_1/explanatory_variables.xlsx",
-                sheet_name="Initial_Conditions",
-            ),
-        }
+    generators = {
+        g: (generators_all[g]["Minimum downtime (h)"], generators_all[g]["Minimum uptime (h)"])
+        for g in gen_order
     }
 
-    print(wrapped.model.__class__.__module__)
-    print(wrapped.model.__class__.__name__)
+    wrapped = model(model=m, generators=generators, gen_order=gen_order)
 
-    with open("submission/model.dill", "wb") as file:
-        dill.dump(wrapped, file)
-
-    with open("submission/model.dill", "rb") as f:
-        new_model = dill.load(f)
-
-    sample_output = new_model.predict(sample_input)
-
-    with open("submission/prediction.dill", "wb") as file:
-        dill.dump(sample_output, file)
-
+    Path("submission").mkdir(parents=True, exist_ok=True)
+    with open("submission/model.dill", "wb") as f:
+        dill.dump(wrapped, f)
 
 if __name__ == "__main__":
     main()

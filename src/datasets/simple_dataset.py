@@ -1,5 +1,4 @@
 import json
-from typing import Tuple
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -54,13 +53,15 @@ class SimpleDataset(Dataset):
         # Sort
         sorted_gens = sorted(df_targets.columns)
         df_targets = df_targets[sorted_gens]
+        df_init_conditions = df_init_conditions.set_index(df_init_conditions.columns[0])
+        df_init_conditions = df_init_conditions.loc[sorted_gens]
 
         # Build features tensors
         profiles = torch.tensor(
             df_profiles.iloc[:, 1:].to_numpy(), dtype=torch.float32
         )  # (72, 3) demand/wind/solar
         init_conds = torch.tensor(
-            df_init_conditions.iloc[:, 1:].to_numpy(), dtype=torch.float32
+            df_init_conditions.to_numpy(), dtype=torch.float32
         ).T  # (2, 51) e.g. (init_power, init_status)
         y = torch.tensor(df_targets.to_numpy(), dtype=torch.float32)
 
@@ -68,8 +69,8 @@ class SimpleDataset(Dataset):
             "features": {"profiles": profiles, "initial_conditions": init_conds},
             "target": {
                 "is_on": y,
-                "storage_status": storage_status, # charging, discharging, idle
-            }, 
+                "storage_status": storage_status,  # charging, discharging, idle
+            },
             "gen_names": sorted_gens,
         }
 
@@ -80,9 +81,7 @@ class SimpleDataset(Dataset):
         sample = self._load_file(path_features, path_targets, path_output_gz)
         return sample
 
-    def _get_storage_decisions_from_gz(
-        self, gz_path: str
-    ) -> torch.Tensor:
+    def _get_storage_decisions_from_gz(self, gz_path: str) -> torch.Tensor:
         """
         Read OutputData.json if it exists; otherwise read OutputData.json.gz.
         """
@@ -103,7 +102,9 @@ class SimpleDataset(Dataset):
         T = 72
         EPS = 1e-3  # small threshold to determine if charging/discharging
 
-        storage_status = torch.zeros((T, S, 3), dtype=torch.int64) # charging, discharging, idle
+        storage_status = torch.zeros(
+            (T, S, 3), dtype=torch.int64
+        )  # charging, discharging, idle
 
         for i, s_name in enumerate(storage_names):
             charge_rates = torch.tensor(charging_dict[s_name], dtype=torch.float32)
