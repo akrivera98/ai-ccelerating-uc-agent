@@ -13,13 +13,13 @@ def compute_frequencies(dataset: SimpleDataset, save_path=None):
         print("Loaded commitment frequencies from", save_path)
         return commitment_frequencies
 
-    is_on_counts = torch.zeros_like(dataset[0]["target"]["is_on"].T)  # T, G
+    is_on_counts = torch.zeros_like(dataset[0]["target"]["is_on"])  # T, G
     gen_names = dataset[0]["gen_names"]
     for i in range(len(dataset)):
         targets = dataset[i]["target"]
         is_on = targets["is_on"]  # T, G
 
-        is_on_counts += is_on.T
+        is_on_counts += is_on
 
     commitment_frequencies = {
         "percentage": (is_on_counts / len(dataset)).numpy(),
@@ -248,7 +248,7 @@ def compute_expected_commitment_given_load(
     committed_sum = np.zeros(n_bins, dtype=np.float64)  # sum of commitments in each bin
     counts = np.zeros(n_bins)
     gen_on_sum_gross = np.zeros(
-        (n_bins, dataset[0]["target"]["is_on"].shape[0])
+        (n_bins, dataset[0]["target"]["is_on"].shape[1])
     )  # n_bins, G
     bin_gen_counts = np.zeros(n_bins)
 
@@ -258,7 +258,7 @@ def compute_expected_commitment_given_load(
     )  # sum of commitments in each bin
     counts_net = np.zeros(n_bins)
     gen_on_sum_net = np.zeros(
-        (n_bins, dataset[0]["target"]["is_on"].shape[0])
+        (n_bins, dataset[0]["target"]["is_on"].shape[1])
     )  # n_bins, G
     bin_gen_counts_net = np.zeros(n_bins)
 
@@ -267,7 +267,7 @@ def compute_expected_commitment_given_load(
         wind_profile = dataset[i]["features"]["profiles"][:, 1].cpu().numpy()
         solar_profile = dataset[i]["features"]["profiles"][:, 2].cpu().numpy()
         net_load_profile = load_profile - wind_profile - solar_profile
-        is_on = dataset[i]["target"]["is_on"].T.cpu().numpy()  # T, G
+        is_on = dataset[i]["target"]["is_on"].cpu().numpy()  # T, G
         committed_t = is_on.sum(axis=1)  # T,
 
         # Asign each t to a bin

@@ -1,0 +1,74 @@
+# -- Experiment metadata --
+experiment:
+  name: "all_generators_w_violations"
+  notes: "just trying stuff out"
+
+seed: 42
+
+device:
+  kind: "cpu"
+  dtype: "float32"
+
+# -- Solver / ED layer settings --
+ed:
+  model: "EDModelLP"
+  solver_args:
+
+
+# -- Data -- 
+dataset:
+  data_dir: "data/Train_Data"
+  ed_instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
+
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+dataloader: 
+  batch_size: 16
+  shuffle_train: true
+
+# -- NN model --
+model:
+  name: "TwoHeadMLP_Flex"
+  hyper_params:
+    input_size: 318
+    hidden_size: 128
+    num_hidden_layers: 5
+    return_full_is_on: true
+    round_thermal: "threshold_ste"
+    predict_storage: false
+  gen_names_path: "gens_to_predict.pkl"
+
+
+# -- Ablation switches --
+ablation:
+  rounding: 
+    train: true
+
+  use_ed_in_training: false
+
+  loss_weights: 
+    supervised: 1.0
+    violation: 0.01
+    ed_objective: 0.0
+    startup: 0.0
+
+# -- Training --
+training: 
+  num_epochs: 50
+  optimizer: "Adam"
+  learning_rate: 1.0e-3
+  val_every: 5 # 0 = off
+  early_stopping:
+    enabled: true
+    monitor: "val_loss"
+    patience: 5
+    min_rel_improve: 0.005
+    eps: 1.0e-8
+
+# -- Checkpointing and outputs --
+output: 
+  base_dir: "results"
+  save_every: 10 # 0 = only save final.

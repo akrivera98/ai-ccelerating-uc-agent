@@ -45,7 +45,7 @@ class SimpleDataset(Dataset):
 
     def _load_file(self, path_features: str, path_targets: str, path_gz: str) -> dict:
         df_profiles = pd.read_excel(path_features, sheet_name="Profiles")
-        is_charging, is_discharging = self._get_storage_decisions_from_gz(path_gz)
+        storage_status = self._get_storage_decisions_from_gz(path_gz)
         df_init_conditions = pd.read_excel(
             path_features, sheet_name="Initial_Conditions"
         )
@@ -68,9 +68,8 @@ class SimpleDataset(Dataset):
             "features": {"profiles": profiles, "initial_conditions": init_conds},
             "target": {
                 "is_on": y,
-                "is_charging": is_charging,
-                "is_discharging": is_discharging,
-            },
+                "storage_status": storage_status, # charging, discharging, idle
+            }, 
             "gen_names": sorted_gens,
         }
 
@@ -83,7 +82,7 @@ class SimpleDataset(Dataset):
 
     def _get_storage_decisions_from_gz(
         self, gz_path: str
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Read OutputData.json if it exists; otherwise read OutputData.json.gz.
         """
@@ -104,8 +103,7 @@ class SimpleDataset(Dataset):
         T = 72
         EPS = 1e-3  # small threshold to determine if charging/discharging
 
-        is_charging = torch.zeros((T, S), dtype=torch.float32)
-        is_discharging = torch.zeros((T, S), dtype=torch.float32)
+        storage_status = torch.zeros((T, S, 3), dtype=torch.int64) # charging, discharging, idle
 
         for i, s_name in enumerate(storage_names):
             charge_rates = torch.tensor(charging_dict[s_name], dtype=torch.float32)
@@ -113,10 +111,10 @@ class SimpleDataset(Dataset):
                 discharging_dict[s_name], dtype=torch.float32
             )
 
-            is_charging[:, i] = (charge_rates > EPS).float()
-            is_discharging[:, i] = (discharge_rates > EPS).float()
-        assert torch.all(is_charging * is_discharging == 0), (
+            storage_status[:, i, 0] = (charge_rates > EPS).int()
+            storage_status[:, i, 1] = (discharge_rates > EPS).int()
+        assert torch.all(storage_status[:, :, 0] * storage_status[:, :, 1] == 0), (
             "Storage units cannot charge and discharge simultaneously."
         )
 
-        return is_charging, is_discharging
+        return storage_status

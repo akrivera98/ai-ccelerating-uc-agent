@@ -6,7 +6,7 @@ from tqdm import tqdm
 import yaml
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
-import src.models.simple_mlp as models
+import src.models.fnn as models
 from src.models.round import ste_round
 import src.utils.losses as losses
 from src.models.ed_model_qp import EDModelLP
