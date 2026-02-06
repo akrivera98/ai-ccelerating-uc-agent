@@ -44,7 +44,9 @@ class SimpleDataset(Dataset):
 
     def _load_file(self, path_features: str, path_targets: str, path_gz: str) -> dict:
         df_profiles = pd.read_excel(path_features, sheet_name="Profiles")
-        storage_status = self._get_storage_decisions_from_gz(path_gz)
+        storage_status, charge_rates, discharge_rates, sorted_storage = (
+            self._get_storage_decisions_from_gz(path_gz)
+        )
         df_init_conditions = pd.read_excel(
             path_features, sheet_name="Initial_Conditions"
         )
@@ -72,6 +74,9 @@ class SimpleDataset(Dataset):
                 "storage_status": storage_status,  # charging, discharging, idle
             },
             "gen_names": sorted_gens,
+            "storage_names": sorted_storage,
+            "charge_rates": charge_rates,
+            "discharge_rates": discharge_rates,
         }
 
     def __getitem__(self, idx: int) -> dict:
@@ -106,6 +111,9 @@ class SimpleDataset(Dataset):
             (T, S, 3), dtype=torch.int64
         )  # charging, discharging, idle
 
+        all_charge_rates = torch.zeros((T, S))
+        all_discharge_rates = torch.zeros((T, S))
+
         for i, s_name in enumerate(storage_names):
             charge_rates = torch.tensor(charging_dict[s_name], dtype=torch.float32)
             discharge_rates = torch.tensor(
@@ -114,8 +122,16 @@ class SimpleDataset(Dataset):
 
             storage_status[:, i, 0] = (charge_rates > EPS).int()
             storage_status[:, i, 1] = (discharge_rates > EPS).int()
+
+            storage_status[:, i, 2] = (
+                1 - storage_status[:, i, 0] - storage_status[:, i, 1]
+            )
+
+            all_charge_rates[:, i] = charge_rates
+            all_discharge_rates[:, i] = discharge_rates
+
         assert torch.all(storage_status[:, :, 0] * storage_status[:, :, 1] == 0), (
             "Storage units cannot charge and discharge simultaneously."
         )
 
-        return storage_status
+        return storage_status, all_charge_rates, all_discharge_rates, storage_names

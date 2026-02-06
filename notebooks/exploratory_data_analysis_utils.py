@@ -1,3 +1,4 @@
+import json
 from src.datasets.simple_dataset import SimpleDataset
 import torch
 import numpy as np
@@ -6,25 +7,104 @@ import pickle
 import os
 
 
-def compute_frequencies(dataset: SimpleDataset, save_path=None):
-    if os.path.exists(save_path):
+def compute_storage_load_share(dataset, save_path=None, reload=False):
+    shares = []
+
+    if save_path is not None and not reload:
+        if os.path.exists(save_path):
+            with open(save_path, "rb") as f:
+                shares = pickle.load(f)
+            print("Loaded storage load shares from", save_path)
+            return shares
+
+    for i in range(len(dataset)):
+        item = dataset[i]
+
+        load = item["features"]["profiles"][:, 0]  # (T,)
+        p_ch = item["charge_rates"]  # (T,S)
+        p_dis = item["discharge_rates"]  # (T,S)
+
+        net = (p_dis - p_ch).sum(dim=1)  # (T,)
+        share = net / load
+
+        share = torch.clamp(share, min=0.0)
+
+        shares.append(share)
+
+    if save_path is not None:
+        with open(save_path, "wb") as f:
+            pickle.dump(shares, f)
+        print("Saved storage load shares to", save_path)
+
+    return torch.stack(shares, dim=0)  # (N,T)
+
+
+def plot_share_histogram(shares, bins=40):
+    shares = shares.reshape(-1) * 100  # or shares.flatten()
+    plt.figure()
+    plt.hist(shares, bins=bins)
+    plt.xlabel("Storage share of load")
+    plt.ylabel("Count")
+    plt.title("Distribution of storage load share (all instances & times)")
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+
+def plot_share_boxplot_vs_time(shares, max_hours=None):
+    data = shares.cpu().numpy() * 100  # %
+
+    if max_hours is not None:
+        data = data[:, :max_hours]
+
+    plt.figure(figsize=(24, 4))
+    plt.boxplot(
+        [data[:, t] for t in range(data.shape[1])],
+        showfliers=True,
+    )
+    plt.xlabel("Hour (t)")
+    plt.ylabel("% of load supplied by storage")
+    plt.title("Distribution of storage contribution vs time")
+    plt.ylim(bottom=0)
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.show()
+
+
+def compute_frequencies(dataset: SimpleDataset, save_path=None, reload=False):
+    if os.path.exists(save_path) and not reload:
         with open(save_path, "rb") as f:
             commitment_frequencies = pickle.load(f)
         print("Loaded commitment frequencies from", save_path)
         return commitment_frequencies
 
     is_on_counts = torch.zeros_like(dataset[0]["target"]["is_on"])  # T, G
+    charging_counts = torch.zeros_like(dataset[0]["charge_rates"])  # T, S
+    discharging_counts = torch.zeros_like(dataset[0]["charge_rates"])  # T, S
+    idle_counts = torch.zeros_like(dataset[0]["charge_rates"])  # T, S
+
     gen_names = dataset[0]["gen_names"]
+    storage_names = dataset[0]["storage_names"]
+
     for i in range(len(dataset)):
         targets = dataset[i]["target"]
         is_on = targets["is_on"]  # T, G
+        storage_status = targets["storage_status"]  # T, S, 3
 
         is_on_counts += is_on
+        charging_counts += storage_status[:, :, 0]
+        discharging_counts += storage_status[:, :, 1]
+        idle_counts += storage_status[:, :, 2]
 
     commitment_frequencies = {
-        "percentage": (is_on_counts / len(dataset)).numpy(),
+        "percentage_is_on": (is_on_counts / len(dataset)).numpy(),
+        "percentage_charging": (charging_counts / len(dataset)).numpy(),
+        "percentage_discharging": (discharging_counts / len(dataset)).numpy(),
+        "percentage_idle": (idle_counts / len(dataset)).numpy(),
         "counts": is_on_counts.numpy(),
         "gen_names": gen_names,
+        "storage_names": storage_names,
+        "charging_counts": charging_counts.numpy(),
+        "discharging_counts": discharging_counts.numpy(),
+        "idle_counts": idle_counts.numpy(),
     }
 
     if save_path is not None:
@@ -44,7 +124,7 @@ def plot_3d_histogram(
     sort_by="mean",
 ):
     frequencies = (
-        commitment_frequencies["percentage"]
+        commitment_frequencies["percentage_is_on"]
         if not plot_counts
         else commitment_frequencies["counts"].astype(int)
     )
@@ -109,7 +189,7 @@ def plot_slice_fix_gen(
 ):  # sorting won't be the same as in 3d hist right now.
     # get gen data
     frequencies = (
-        commitment_frequencies["percentage"]
+        commitment_frequencies["percentage_is_on"]
         if not plot_counts
         else commitment_frequencies["counts"].astype(int)
     )
@@ -136,7 +216,7 @@ def plot_slice_fix_period(
     t_idx, commitment_frequencies, plot_counts=False
 ):  # sorting won't be the same as in 3d hist right now.
     frequencies = (
-        commitment_frequencies["percentage"]
+        commitment_frequencies["percentage_is_on"]
         if not plot_counts
         else commitment_frequencies["counts"].astype(int)
     )
@@ -159,13 +239,30 @@ def plot_slice_fix_period(
     plt.show()
 
 
-def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
-    frequencies = commitment_frequencies["percentage"]
-    counts = commitment_frequencies["counts"].astype(int)
-    gen_names = commitment_frequencies["gen_names"]
-    T, G = frequencies.shape  # check dims here
+def plot_heatmap(
+    commitment_frequencies,
+    unit_type="gens",
+    var_type=None,
+    sort_units=True,
+    sort_by="mean",
+):
 
-    if sort_gens:
+    if unit_type == "gens":
+        frequencies = commitment_frequencies["percentage_is_on"]
+        counts = commitment_frequencies["counts"].astype(int)
+        unit_names = commitment_frequencies["gen_names"]
+    elif unit_type == "storage":
+        if var_type is None:
+            raise ValueError(
+                "var_type must be specified for storage units. Specify one of 'charging', 'discharging', or 'idle'."
+            )
+        frequencies = commitment_frequencies[f"percentage_{var_type}"]
+        counts = commitment_frequencies[f"{var_type}_counts"].astype(int)
+        unit_names = commitment_frequencies["storage_names"]
+
+    T, U = frequencies.shape
+
+    if sort_units:
         if sort_by == "mean":
             score = frequencies.mean(axis=0)
         elif sort_by == "max":
@@ -179,7 +276,7 @@ def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
 
         frequencies = frequencies[:, order]
         counts = counts[:, order]
-        gen_names = [gen_names[i] for i in order]
+        unit_names = [unit_names[i] for i in order]
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
@@ -193,21 +290,29 @@ def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
     )
 
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label("Commitment frequency")
+    label_str = (
+        f"{var_type} frequency" if var_type is not None else "Commitment frequency"
+    )
+    cbar.set_label(label_str)
 
-    ax.set_xticks(np.arange(G))
-    ax.set_xticklabels(gen_names, rotation=90, fontsize=8)
+    ax.set_xticks(np.arange(U))
+    ax.set_xticklabels(unit_names, rotation=90, fontsize=8)
     ax.set_ylabel("Time")
-    ax.set_title("Commitment frequency heatmap (annotated with counts)")
+    title_str = (
+        f"{var_type.capitalize()} frequency heatmap"
+        if var_type is not None
+        else "Commitment frequency heatmap"
+    )
+    ax.set_title(title_str + " (annotated with counts)", fontsize=14)
 
     # -------- annotate cells --------
     for t in range(T):
-        for g in range(G):
-            val = counts[t, g]
+        for u in range(U):
+            val = counts[t, u]
             # choose text color for contrast
-            color = "black" if frequencies[t, g] > 0.6 else "white"
+            color = "black" if frequencies[t, u] > 0.6 else "white"
             ax.text(
-                g,
+                u,
                 t,
                 f"{val}",
                 ha="center",
@@ -218,7 +323,7 @@ def plot_heatmap(commitment_frequencies, sort_gens=True, sort_by="mean"):
     plt.tight_layout()
     plt.show()
 
-    return gen_names  # sorted gen names
+    return unit_names  # sorted unit names
 
 
 def compute_expected_commitment_given_load(
@@ -232,12 +337,12 @@ def compute_expected_commitment_given_load(
             return expected_commitment
 
     if max_load is None and reload:
-        max_load, min_net_load, max_net_load = _get_max_load(dataset)
+        min_load, max_load, min_net_load, max_net_load = _get_max_load(dataset)
 
     n_samples = len(dataset)
 
     # Load bins
-    load_bin_edges = np.linspace(0, max_load, n_bins + 1)
+    load_bin_edges = np.linspace(min_load, max_load, n_bins + 1)
     bin_centers = 0.5 * (load_bin_edges[:-1] + load_bin_edges[1:])
 
     # Net load bins
@@ -354,7 +459,9 @@ def plot_expected_commitment_given_load(results):  # Only gross load for now
 
     ax.set_xlabel("Load level")
     ax.set_ylabel("Expected number of committed generators")
-    ax.set_title("Expected number of committed generators given load level")
+    ax.set_title(
+        "Expected number of committed generators given load level", fontsize=14
+    )
     plt.tight_layout()
     plt.show()
 
@@ -417,7 +524,8 @@ def plot_gen_commitment_heatmap(
     ax.set_xlabel("Generator (sorted by average commitment)")
     ax.set_ylabel("Load level")
     ax.set_title(
-        f"Generator commitment probability given {'net' if net_load else 'gross'} load"
+        f"Generator commitment probability given {'net' if net_load else 'gross'} load",
+        fontsize=14,
     )
 
     # ---- annotate cells ----
@@ -441,16 +549,22 @@ def plot_gen_commitment_heatmap(
 
 
 def _get_max_load(dataset: SimpleDataset):
-    seen_max_load = 0.0
+    seen_max_load = float("-inf")
+    seen_min_load = float("inf")
     seen_min_net_load = float("inf")
     seen_max_net_load = float("-inf")
+
     for i in range(len(dataset)):
         load_profile = dataset[i]["features"]["profiles"][:, 0]  # 72,
         wind_profile = dataset[i]["features"]["profiles"][:, 1]
         solar_profile = dataset[i]["features"]["profiles"][:, 2]
+
         max_load = load_profile.max().item()
+        min_load = load_profile.min().item()
         min_net_load = (load_profile - wind_profile - solar_profile).min().item()
         max_net_load = (load_profile - wind_profile - solar_profile).max().item()
+        if min_load < seen_min_load:
+            seen_min_load = min_load
         if max_load > seen_max_load:
             seen_max_load = max_load
         if min_net_load < seen_min_net_load:
@@ -459,11 +573,18 @@ def _get_max_load(dataset: SimpleDataset):
             seen_max_net_load = max_net_load
 
     print(
-        f"Determined max load: {seen_max_load}, min net load: {seen_min_net_load}, max net load: {seen_max_net_load}"
+        f"Determined min load: {seen_min_load}, max load: {seen_max_load}, min net load: {seen_min_net_load}, max net load: {seen_max_net_load}"
     )
-    return seen_max_load, seen_min_net_load, seen_max_net_load
+    return seen_min_load, seen_max_load, seen_min_net_load, seen_max_net_load
 
+def plot_thermal_unit_parameters():
+    sample_path = "data/Train_Data/sample_instance.json"
+    with open(sample_path, "r") as f:
+        instance = json.load(f)
 
-# TODO: net load plots
+    gen_data = instance["Generators"]
+    minuptimes = []
+    mindowntimes = []
+    costs = []
 
-# TODO: storage plots
+    
