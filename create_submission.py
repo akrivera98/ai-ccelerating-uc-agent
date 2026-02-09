@@ -217,6 +217,7 @@ class model:
     def predict(self, features):
         torch = self.torch
         out = {}
+        status = {}
         self.model.eval()
         with torch.no_grad():
             for instance_index in features.keys():
@@ -230,8 +231,52 @@ class model:
 
                 df = self.transform_predictions(is_on)
                 out[instance_index] = df
-                # out[instance_index] = self.repair_feasibility(features[instance_index], df)
-        return out
+                status[instance_index] = self.repair_feasibility(features[instance_index], df)
+        return status
+
+    def repair_feasibility(self, features, status_df) -> pd.DataFrame:
+        import numpy as np
+        repaired_df = status_df.copy()
+        df_init_conditions = features["Initial_Conditions"]
+        initial_of_gen = dict(zip(df_init_conditions.index, df_init_conditions["initial_status"].values))
+        for gen_name, (min_down, min_up) in self.generators.items():
+            status = status_df[gen_name].values.copy().astype(int)
+            init_status = int(initial_of_gen[gen_name])
+            min_down = int(min_down)
+            min_up = max(2, int(min_up))
+            # print(gen_name, min_down, min_up, init_status)
+            # Handle initial status constraint
+            if init_status > 0:
+                # Must stay ON for remaining up time
+                remaining = max(0, min_up - init_status)
+                status[:remaining] = 1
+                current_state = 1
+                time_in_state = init_status + remaining
+            elif init_status < 0:
+                # Must stay OFF for remaining down time
+                remaining = max(0, min_down - abs(init_status))
+                status[:remaining] = 0
+                current_state = 0
+                time_in_state = abs(init_status) + remaining
+            
+            # Process from the point after initial constraint
+            start_idx = remaining
+            for i in range(start_idx, len(status)):
+                window_length = min_up if current_state == 1 else min_down
+
+                if time_in_state < window_length:
+                    time_in_state += 1
+                else:
+                    lookahead_window = status[i:min(i + window_length, len(status))]
+                    if np.sum(lookahead_window == current_state) >= np.sum(lookahead_window != current_state):
+                        time_in_state += 1
+                    else:
+                        current_state = abs(current_state - 1)
+                        time_in_state = 1
+                status[i] = current_state
+
+            repaired_df[gen_name] = status
+        return repaired_df
 
 
 def main():

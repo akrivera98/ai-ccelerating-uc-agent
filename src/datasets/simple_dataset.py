@@ -25,6 +25,7 @@ class SimpleDataset(Dataset):
 
         # Instance directories present in all three
         instance_dirs = sorted(feat_map.keys())
+        self.instance_dirs = instance_dirs
 
         # Rebuild aligned lists
         self.features_files = [feat_map[d] for d in instance_dirs]

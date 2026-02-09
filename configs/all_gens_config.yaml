@@ -1,6 +1,6 @@
 # -- Experiment metadata --
 experiment:
-  name: "less_gens_w_sup_viol"
+  name: "all_gens_w_sup_viol"
   notes: "just trying stuff out"
 
 seed: 42
@@ -39,7 +39,7 @@ model:
     return_full_is_on: true
     round_thermal: "threshold_ste"
     predict_storage: false
-  gen_names_path: "gens_to_predict.pkl"
+  gen_names_path: 
 
 
 # -- Ablation switches --
@@ -57,7 +57,7 @@ ablation:
 
 # -- Training --
 training: 
-  num_epochs: 15
+  num_epochs: 5
   optimizer: "Adam"
   learning_rate: 1.0e-3
   val_every: 5 # 0 = off
@@ -71,4 +71,4 @@ training:
 # -- Checkpointing and outputs --
 output: 
   base_dir: "results"
-  save_every: 0 #only save final.
+  save_every: 0 #= only save final.

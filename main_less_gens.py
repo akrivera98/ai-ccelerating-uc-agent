@@ -266,7 +266,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/less_gens_config.yaml",
+        default="configs/all_gens_config.yaml",
         help="Path to the configuration file (YAML format).",
     )
 
@@ -349,7 +349,10 @@ def main() -> None:
     # Set up model hyperparameters
     hyper_params = cfg.model.hyper_params.__dict__
     hyper_params["gen_names_all"] = dataset[0]["gen_names"]
-    hyper_params["gen_names"] = pickle.load(open(cfg.model.gen_names_path, "rb"))
+    if cfg.model.gen_names_path is not None:
+        hyper_params["gen_names"] = pickle.load(open(cfg.model.gen_names_path, "rb"))
+    else:
+        hyper_params["gen_names"] = None
 
     # Instantiate model
     model_name = cfg.model.name
@@ -483,12 +486,6 @@ def main() -> None:
     torch.save(model.state_dict(), weights_save_path)
     print(f"Model saved to {weights_save_path}")
 
-    # Save the whole model
-    model_save_path = os.path.join(
-        base_save_path, cfg.experiment.name, timestamp, "simple_mlp_model.pt"
-    )
-    torch.save(model, model_save_path)
-
     # Save losses
     loss_path = os.path.join(
         base_save_path, cfg.experiment.name, timestamp, "losses.pt"
@@ -518,6 +515,23 @@ def main() -> None:
     with open(config_save_path, "w") as f:
         yaml.safe_dump(cfg.to_dict(), f, sort_keys=False)
     print(f"Config saved to {config_save_path}")
+
+    # # Only do this once: move instances to Test_Data
+    # test_root = "Test_Data"
+    # os.makedirs(test_root, exist_ok=True)
+
+    # for idx in test_ds.indices:
+    #     idx = int(idx)
+
+    #     src_dir = dataset.instance_dirs[idx]  # FULL path
+    #     instance_name = os.path.basename(src_dir)  # folder name
+    #     dst_dir = os.path.join(test_root, instance_name)
+
+    #     if not os.path.exists(dst_dir):
+    #         os.symlink(os.path.abspath(src_dir), dst_dir)
+    #         print(f"Symlinked {src_dir} -> {dst_dir}")
+    #     else:
+    #         print(f"{dst_dir} already exists, skipping.")
 
 
 if __name__ == "__main__":
