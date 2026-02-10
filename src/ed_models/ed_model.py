@@ -1,19 +1,25 @@
 from cvxpylayers.torch import CvxpyLayer
 import cvxpy as cp
-from src.models.components import (
+from src.ed_models.components import (
     ProfiledGeneratorsComponent,
     SystemComponent,
     StorageUnitsComponent,
     ThermalGeneratorsComponent,
 )
-from cvxpylayers.jax import CvxpyLayer as JaxCvxpyLayer
 
+# from cvxpylayers.jax import CvxpyLayer as JaxCvxpyLayer
+from src.ed_models.data_classes import create_data_dict
+from src.registry import registry
+
+
+@registry.register_ed_model("uc_model")
 class UCModel:
-    def __init__(self, data_dict):
+    def __init__(self, instance_path, solver=None):
         """
         profiled_gen_data_list: list of ProfiledGeneratorData
         load_profile: np.array of shape (T,)   (system load per time step)
         """
+        data_dict = create_data_dict(instance_path)
         self.T = len(data_dict["system_data"].load)
 
         # Components
@@ -83,17 +89,19 @@ class UCModel:
                 parameters=params_list,
                 variables=list(self.variables.values()),
                 solver=solver,
+                solver_args={"verbose": False},
             ).to(device)
             return self.cvxpy_layer
 
         elif backend == "jax":
-            self.cvxpy_layer = JaxCvxpyLayer(
-                self.problem,
-                parameters=params_list,
-                variables=list(self.variables.values()),
-                solver=cp.CUCLARABEL,
-            )
-            return self.cvxpy_layer
+            # self.cvxpy_layer = JaxCvxpyLayer(
+            #     self.problem,
+            #     parameters=params_list,
+            #     variables=list(self.variables.values()),
+            #     solver=cp.CUCLARABEL,
+            # )
+            # return self.cvxpy_layer
+            pass
 
     def solve(self, **kwargs):
         if self.problem is None:

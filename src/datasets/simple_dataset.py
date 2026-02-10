@@ -5,10 +5,12 @@ from torch.utils.data import Dataset
 import os
 import glob
 import gzip
+from src.registry import registry
 
 
+@registry.register_dataset("simple_dataset")
 class SimpleDataset(Dataset):
-    def __init__(self, data_dir: str):
+    def __init__(self, *, data_dir: str):
         self.data_dir = data_dir
 
         features = glob.glob(os.path.join(data_dir, "*", "explanatory_variables.xlsx"))

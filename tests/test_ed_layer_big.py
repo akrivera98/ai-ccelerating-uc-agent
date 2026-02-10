@@ -1,6 +1,6 @@
 import torch
 from src.models.ed_model import UCModel
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 import json
 import pickle
 import pandas as pd

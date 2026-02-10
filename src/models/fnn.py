@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from typing import Optional, Sequence
 
 from src.models.round import ste_round
+from src.registry import registry
 
 
 class SimpleMLP(nn.Module):
@@ -151,7 +152,7 @@ class TwoHeadMLP(nn.Module):
             "storage_logits": storage_logits,  # to be used in the loss
         }
 
-
+@registry.register_model("flexible_two_head_mlp")
 class TwoHeadMLP_Flex(nn.Module):
     def __init__(
         self,

@@ -2,43 +2,246 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
+from src.ed_models.data_classes import create_data_dict
+from src.registry import registry
+# TODO: create a base class everyone can inherit from
+# TODO: you really need to clean this up
 
-class BCELoss(nn.Module):
-    def __init__(self):
+
+@registry.register_loss("custom_loss_ed")
+class CustomLoss_ED(nn.Module):
+    def __init__(self, *, instance_path, weights):
         super().__init__()
-        self.bce_loss = nn.BCELoss()
 
-    def forward(self, inputs, targets):
-        return self.bce_loss(inputs, targets)
+        # Set up supervised terms
+        self.is_on_sup_loss = nn.BCELoss()
+        self.storage_sup_loss = nn.CrossEntropyLoss()
 
+        # Set up ED terms
+        self._get_ed_instance_parameters(instance_path)
 
-class MSELoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.mse_loss = nn.MSELoss()
+        # Get loss terms weights
+        self.violations_penalty = (
+            weights["violations"] if weights["violations"] is not None else 1.0
+        )
+        self.supervised_weight = (
+            weights["supervised"] if weights["supervised"] is not None else 1.0
+        )
+        self.ed_objective_weight = (
+            weights["ed_objective"] if weights["ed_objective"] is not None else 1.0
+        )
 
-    def forward(self, inputs, targets):
-        return self.mse_loss(inputs, targets)
+        self.loss_names = ["total", "ed", "supervised", "violations"]
 
+    def forward(self, features, targets, nn_outputs, ed_solution):
 
-class CustomLoss1(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bce_loss = nn.BCEWithLogitsLoss()
-        self.mse_loss = nn.MSELoss()
-        self.lp_infeasibility_penalty = 1.0
+        initial_commitment = features["initial_conditions"][:, -1, :] > 0
+        initial_status = features["initial_conditions"][:, -1, :]
 
-    def compute_lp_infeasibility(self, targets):
-        # Placeholder for LP infeasibility computation
-        return torch.tensor(0.0)  # Replace with actual computation
+        self.switch_on, self.switch_off = self._compute_switch_on_off(
+            nn_outputs["is_on"], initial_commitment=initial_commitment
+        )
 
-    def compute_integer_violations(self, targets, params):
-        return None
+        # supervised loss terms
+        supervised_loss_term = (
+            self.compute_supervised_loss(nn_outputs, targets) * self.supervised_weight
+        )
 
-    def forward(self, inputs, targets, params):
-        bce_cost = self.bce_loss(inputs, targets)
+        # economic dispatch cost
+        economic_dispatch_cost = (
+            self.compute_economic_dispatch_cost(ed_solution, nn_outputs)
+            * self.ed_objective_weight
+        )
 
-        return None
+        # Constraint violation cost
+        up_down_time_violations_cost = (
+            self.compute_constraint_violations(
+                nn_outputs,
+                initial_status=initial_status,
+            )
+            * self.violations_penalty
+        )
+
+        total = (
+            economic_dispatch_cost + supervised_loss_term + up_down_time_violations_cost
+        )
+
+        return {
+            "total": total,
+            "ed": economic_dispatch_cost,
+            "supervised": supervised_loss_term,
+            "violations": up_down_time_violations_cost,
+        }
+
+    def compute_supervised_loss(self, outputs_dict, targets):
+
+        # NOTE: this will be broken when predicting a subset of gens
+
+        thermal_commitment_loss = self.is_on_sup_loss(
+            outputs_dict["thermal_probs"], targets["is_on"]
+        )
+        supervised_loss_term = thermal_commitment_loss
+
+        if outputs_dict.get("storage_logits") is not None:  # TODO: clean this up
+            logits = outputs_dict["storage_logits"]
+            target_onehot = targets["storage_status"]
+            y = target_onehot.argmax(dim=-1).long()
+            C = logits.shape[-1]
+            storage_loss = self.storage_sup_loss(logits.reshape(-1, C), y.reshape(-1))
+            supervised_loss_term += storage_loss
+
+        return supervised_loss_term
+
+    def compute_economic_dispatch_cost(self, ed_solution, nn_outputs):
+        profiled_generation = ed_solution[0].transpose(
+            1, 2
+        )  # TODO: check the order here
+        storage_level = ed_solution[1].transpose(1, 2)
+        charge_rate = ed_solution[2].transpose(1, 2)
+        discharge_rate = ed_solution[3].transpose(1, 2)
+        seg_prod = ed_solution[4].transpose(1, 2)
+        prod_above = ed_solution[5].transpose(1, 2)
+        curtailment = ed_solution[6]
+        commitment = nn_outputs["is_on"]
+
+        # Compute profiled units cost
+        profiled_units_cost = (
+            self.profiled_units_cost.view(1, 1, -1) * profiled_generation
+        ).sum()
+
+        # Compute storage units costs
+        storage_charge_cost = (self.charge_costs.view(1, 1, -1) * charge_rate).sum()
+        storage_discharge_cost = (
+            self.discharge_costs.view(1, 1, -1) * discharge_rate
+        ).sum()
+
+        # Compute curtailment costs
+        curtailment_costs = self.power_balance_penalty * torch.sum(curtailment)
+
+        # Compute thermal generators costs
+        turn_on_costs = (self.start_up_costs.view(1, 1, -1) * self.switch_on).sum()
+
+        segment_production_costs = (self.segment_cost.squeeze(1) * seg_prod).sum()
+
+        return (
+            profiled_units_cost
+            + storage_charge_cost
+            + storage_discharge_cost
+            + turn_on_costs
+            + segment_production_costs
+            + curtailment_costs
+        )
+
+    def compute_constraint_violations(self, nn_outputs, initial_status):
+        is_on = nn_outputs["is_on"]
+
+        uptime_violations, downtime_violations = _evaluate_uptime_downtime_constraints(
+            is_on,
+            self.switch_on,
+            self.switch_off,
+            self.min_uptimes,
+            self.min_downtimes,
+            initial_status=initial_status,
+        )
+
+        violations_cost = uptime_violations.sum() + downtime_violations.sum()
+
+        return self.violations_penalty * violations_cost
+
+    def _compute_switch_on_off(
+        self, outputs: torch.tensor, initial_commitment: torch.tensor
+    ):
+        """
+        Compute switch-on events for thermal generators.
+
+        Args:
+            outputs (torch.tensor): Binary tensor indicating on/off status of generators. Dimensions: (T, num_units)
+            initial_commitment (torch.tensor): Initial on/off status of generators. Dimensions: (num_units, )
+        Returns:
+            switch_on_events (torch.tensor): Tensor indicating switch-on events.
+        """
+        prev = torch.cat(
+            (initial_commitment.unsqueeze(1), outputs[:, :-1, :]), dim=1
+        )  # (T, G) excluding last time step
+
+        switch_on = (1.0 - prev) * outputs
+        switch_off = prev * (1.0 - outputs)  # (B, T, G)
+
+        return switch_on, switch_off
+
+    def _get_ed_instance_parameters(self, ed_data_dict_path):
+
+        ed_data_dict = create_data_dict(ed_data_dict_path)
+        production_cost_curves_list = [
+            torch.tensor(g.production_cost_curve)
+            for g in ed_data_dict["thermal_gen_data_list"]
+        ]
+
+        max_segments = max(
+            len(g.production_cost_curve) for g in ed_data_dict["thermal_gen_data_list"]
+        )
+
+        _, self.segment_cost = self._build_segment_mw_cost(
+            production_cost_curves_list, max_segments=max_segments
+        )
+
+        startup_costs_list = [
+            g.startup_costs[0] for g in ed_data_dict["thermal_gen_data_list"]
+        ]
+        self.start_up_costs = torch.tensor(
+            startup_costs_list, dtype=torch.float32
+        )  # TODO: add dims
+
+        min_uptimes_list = [
+            g.min_up_time for g in ed_data_dict["thermal_gen_data_list"]
+        ]
+        self.min_uptimes = torch.tensor(
+            min_uptimes_list, dtype=torch.int64
+        )  # TODO: add dims
+
+        min_downtimes_list = [
+            g.min_down_time for g in ed_data_dict["thermal_gen_data_list"]
+        ]
+        self.min_downtimes = torch.tensor(
+            min_downtimes_list, dtype=torch.int64
+        )  # TODO: add dims
+
+        profiled_units_cost_list = [
+            g.cost for g in ed_data_dict["profiled_gen_data_list"]
+        ]
+        self.profiled_units_cost = torch.tensor(
+            profiled_units_cost_list, dtype=torch.float32
+        )  # TODO: add dims
+
+        storage_charge_costs_list = [
+            s.charge_cost for s in ed_data_dict["storage_data_list"]
+        ]
+        self.charge_costs = torch.tensor(
+            storage_charge_costs_list, dtype=torch.float32
+        )  # TODO: add dims
+
+        storage_discharge_costs_list = [
+            s.discharge_cost for s in ed_data_dict["storage_data_list"]
+        ]
+        self.discharge_costs = torch.tensor(
+            storage_discharge_costs_list, dtype=torch.float32
+        )  # TODO: add dims
+
+        self.power_balance_penalty = ed_data_dict["system_data"].power_balance_penalty
+
+    def _build_segment_mw_cost(self, curves, max_segments):
+        num_units = len(curves)
+        segment_mw = torch.zeros((num_units, 1, max_segments))
+        segment_cost = torch.zeros((num_units, 1, max_segments))
+
+        for i, seg_list in enumerate(curves):
+            all_mw = [mw for mw, cost in seg_list]
+            all_cost = [cost for mw, cost in seg_list]
+            n = len(all_mw)
+            segment_mw[i, 0, :n] = torch.tensor(all_mw)
+            segment_cost[i, 0, :n] = torch.tensor(all_cost)
+
+        return segment_mw, segment_cost
 
 
 class CustomLoss(nn.Module):
@@ -73,7 +276,9 @@ class CustomLoss(nn.Module):
         self.solve_lp_in_loss = solve_lp_in_loss
         self.predicting_storage = predicting_storage
 
-    def _get_parameters_from_data_dict(self, ed_data_dict):
+    def _get_parameters_from_data_dict(self, ed_data_dict_path):
+
+        ed_data_dict = create_data_dict(ed_data_dict_path)
         production_cost_curves_list = [
             torch.tensor(g.production_cost_curve)
             for g in ed_data_dict["thermal_gen_data_list"]

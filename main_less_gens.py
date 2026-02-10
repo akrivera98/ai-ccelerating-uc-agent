@@ -7,9 +7,9 @@ import yaml
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
 import src.models.fnn as models
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 from collections import defaultdict
-from src.utils.losses import CustomLoss
+from src.losses.losses import CustomLoss
 import pickle
 
 

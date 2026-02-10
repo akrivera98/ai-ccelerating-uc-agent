@@ -9,9 +9,9 @@ from torch.utils.data import DataLoader, random_split, Subset
 import src.models.fnn as models
 from src.models.round import ste_round
 from src.models.ed_model_qp import EDModelLP
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 from collections import defaultdict
-from src.utils.losses import CustomLoss
+from src.losses.losses import CustomLoss
 
 
 def save_checkpoint(

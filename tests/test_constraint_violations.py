@@ -1,6 +1,6 @@
-from src.utils.losses import CustomLoss
+from src.losses.losses import CustomLoss
 from src.datasets.simple_dataset import SimpleDataset
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 
 
 data_dir = "data/starting_kit_ai-uc_v2/Train_Data"

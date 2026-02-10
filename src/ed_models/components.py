@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import cvxpy as cp
 import numpy as np
-from src.models.data_classes import (
+from src.ed_models.data_classes import (
     SystemData,
     StorageUnitData,
     ThermalGeneratorData,
@@ -55,12 +55,8 @@ class ProfiledGeneratorsComponent(UCComponent):
         return {"profiled_generation": self.profiled_generation}
 
     def define_parameters(self):
-        self.max_power_solar = cp.Parameter(
-            (1, self.T), nonneg=True, name="max_power_solar"
-        )
-        self.max_power_wind = cp.Parameter(
-            (1, self.T), nonneg=True, name="max_power_wind"
-        )
+        self.max_power_solar = cp.Parameter(self.T, nonneg=True, name="max_power_solar")
+        self.max_power_wind = cp.Parameter(self.T, nonneg=True, name="max_power_wind")
         return {
             "max_power_solar": self.max_power_solar,
             "max_power_wind": self.max_power_wind,
@@ -77,9 +73,9 @@ class ProfiledGeneratorsComponent(UCComponent):
         rows = []
         for i, name in enumerate(self.names):
             if name == "solar":
-                rows.append(self.max_power_solar)  # (1, T)
+                rows.append(np.reshape(self.max_power_solar, (1, self.T)))  # (1, T)
             elif name == "wind":
-                rows.append(self.max_power_wind)  # (1, T)
+                rows.append(np.reshape(self.max_power_wind, (1, self.T)))  # (1, T)
             else:
                 rows.append(
                     np.full((1, self.T), self.max_power[i], dtype=float)
@@ -313,7 +309,7 @@ class ThermalGeneratorsComponent(UCComponent):
         return constraints
 
     def define_objective(self):
-        
+
         # Segment costs
         segment_costs = cp.sum(cp.multiply(self.segprod, self.segment_cost))
 

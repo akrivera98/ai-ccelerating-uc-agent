@@ -4,7 +4,7 @@ import torch
 from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import Subset, DataLoader
 from src.models.ed_model_qp import EDModelLP
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 from src.models.fnn import TwoHeadMLP
 from src.utils.evaluation import run_standard_evaluation
 import yaml

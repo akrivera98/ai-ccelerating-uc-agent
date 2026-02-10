@@ -9,9 +9,9 @@ from src.datasets.simple_dataset import SimpleDataset
 from torch.utils.data import DataLoader, random_split
 import src.models.fnn as models
 from src.models.round import ste_round
-import src.utils.losses as losses
+import src.losses.losses as losses
 from src.models.ed_model import UCModel
-from src.models.data_classes import create_data_dict
+from src.ed_models.data_classes import create_data_dict
 import ipdb
 from src.utils.profiling import benchmark_batchsize_sweep, format_sweep_results
 from torch.utils.data import Subset
