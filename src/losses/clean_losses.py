@@ -5,6 +5,7 @@ from src.ed_models.data_classes import create_data_dict
 import torch.nn.functional as F
 from src.registry import registry
 
+
 class BaseLossED(nn.Module):
     """
     Base loss for UC + ED training.
@@ -19,7 +20,7 @@ class BaseLossED(nn.Module):
       - compute_violation_term(...)
     """
 
-    def __init__(self, *, instance_path: str, weights: Dict[str, Optional[float]]):
+    def __init__(self, *, instance_path: str, weights: Dict[str, Optional[float]], pred_idx=None):
         super().__init__()
 
         # ------------------
@@ -27,6 +28,7 @@ class BaseLossED(nn.Module):
         # ------------------
         self.is_on_sup_loss = nn.BCELoss()
         self.storage_sup_loss = nn.CrossEntropyLoss()
+        self.pred_idx = pred_idx  # if not None, only apply supervised loss to this subset of generators
 
         # ------------------
         # Weights
@@ -126,9 +128,14 @@ class BaseLossED(nn.Module):
         targets: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
 
+        if self.pred_idx is not None:
+            target_pred = targets["is_on"][:, :, self.pred_idx]
+        else:
+            target_pred = targets["is_on"]
+
         loss = self.is_on_sup_loss(
             nn_outputs["thermal_probs"],
-            targets["is_on"],
+            target_pred,
         )
 
         if nn_outputs.get("storage_logits") is not None:
@@ -420,6 +427,7 @@ class BaseLossED(nn.Module):
 class CvxpyLayersLoss(BaseLossED):
     pass
 
+
 @registry.register_loss("scipy_solver_loss")
 class ScipySolverLoss(BaseLossED):
     """
@@ -458,6 +466,7 @@ class ScipySolverLoss(BaseLossED):
             f"ScipySolverLoss: expected objective tensor to be scalar or (B,), got {tuple(ed_solution.shape)}"
         )
 
+
 @registry.register_loss("qpth_solver_loss")
 class QpthSolverLoss(BaseLossED):
-    pass # Need to implement here custom methods
+    pass  # Need to implement here custom methods

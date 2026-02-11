@@ -33,11 +33,20 @@ class ScpiyLpTrainer(BaseTrainer):
         ed_params = self.config.ed_model.params.to_dict()
 
         # inject LP generator subset (omit fixed-off)
-        ed_params["G_full"] = len(self.dataset.gen_names_all)
         ed_params["lp_gen_idx"] = self.dataset.lp_gen_idx.tolist()  # pred and fixed_on
 
         ed_model_class = registry.get_ed_model(ed_model_name)
         self.ed_model = ed_model_class(**ed_params)
+
+    def load_loss_fn(self):
+        loss_fn_name = self.config.trainer.loss_fn.name
+        loss_fn_params = self.config.trainer.loss_fn.params.to_dict()
+        loss_fn_params["pred_idx"] = (
+            self.dataset.pred_idx.tolist()
+        )  # inject pred generator subset for computing supervised
+        loss_fn_class = registry.get_loss(loss_fn_name)
+        self.loss_fn = loss_fn_class(**loss_fn_params).to(self.device)
+        self.loss_names = self.loss_fn.loss_names
 
     def train_epoch(self):
         self.model.train()

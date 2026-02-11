@@ -205,6 +205,9 @@ class TwoHeadMLP_Flex(nn.Module):
             "fixed_off_idx", self.torch.tensor(fixed_off_idx, dtype=torch.long)
         )
         self.G_out = len(self.pred_gen_idx)
+        print(
+            f"TwoHeadMLP_Flex initialized with G_out={self.G_out}, pred_gen_idx={self.pred_gen_idx}, fixed_on_idx={self.fixed_on_idx}, fixed_off_idx={self.fixed_off_idx}"
+        )
 
         # ---- trunk ----
         layers = [nn.Linear(input_size, hidden_size), nn.ReLU()]

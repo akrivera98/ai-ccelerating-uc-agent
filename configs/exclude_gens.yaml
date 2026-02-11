@@ -2,7 +2,7 @@ device: cpu
 is_debug: false
 seed: 42
 trainer:
-  name: scpiy_lp_trainer
+  name: less_gens_scipy_trainer
   max_epochs: 25
   optimizer:
     name: "Adam"

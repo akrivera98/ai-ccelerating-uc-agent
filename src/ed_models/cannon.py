@@ -584,7 +584,7 @@ class EDRHSBuilder(nn.Module):
 
         B = load.shape[0]
         form = self.form
-        is_on = is_on[:, :, form.lp_gen_idx]  # (B,T,G) -> (B,T,|LP|)
+        is_on_lp = is_on[:, :, form.lp_gen_idx]  # (B,T,G) -> (B,T,|LP|)
 
         # Allocate RHS
         h = torch.zeros((B, form.nineq), device=self.device, dtype=self.dtype)
@@ -596,8 +596,8 @@ class EDRHSBuilder(nn.Module):
         # Fill pieces
         self._fill_profiled_rhs(h, solar_max, wind_max)
         self._fill_storage_rhs(b, h, is_charging, is_discharging)
-        self._fill_thermal_rhs(b, h, is_on)
-        self._fill_system_rhs(b, h, load, is_on)
+        self._fill_thermal_rhs(b, h, is_on_lp)
+        self._fill_system_rhs(b, h, load, is_on_lp)
 
         return (
             q,
@@ -606,7 +606,7 @@ class EDRHSBuilder(nn.Module):
             load,
             solar_max,
             wind_max,
-            is_on,
+            is_on_lp,
             is_charging,
             is_discharging,
             shape_flags,
@@ -668,10 +668,10 @@ class EDRHSBuilder(nn.Module):
 
         # Expand 2D -> (B,T,·)
         if is_on.dim() == 2:
-            assert is_on.shape == (T, G)
+            assert is_on.shape == (T, 51)  # TODO: do not hardcode 51 here
             is_on = is_on.unsqueeze(0).expand(B, -1, -1)
         else:
-            assert is_on.shape[1:] == (T, G)
+            assert is_on.shape[1:] == (T, 51)  # TODO: do not hardcode 51 here
 
         if is_charging.dim() == 2:
             assert is_charging.shape == (T, S)

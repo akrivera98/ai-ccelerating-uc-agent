@@ -295,6 +295,8 @@ class EDHiGHSObjectiveFn(Function):
         lp_workers: Optional[int] = None,
         parallel_min_batch: int = 8,
     ):
+        ctx.G_th_full = is_on.shape[-1]
+
         (
             q,
             h,
@@ -394,9 +396,16 @@ class EDHiGHSObjectiveFn(Function):
     @staticmethod
     def backward(ctx, grad_out):
         form = ctx.form
-        lam_ub, nu_eq, load, solar_max, wind_max, is_on, is_charging, is_discharging = (
-            ctx.saved_tensors
-        )
+        (
+            lam_ub,
+            nu_eq,
+            load,
+            solar_max,
+            wind_max,
+            is_on_lp,
+            is_charging,
+            is_discharging,
+        ) = ctx.saved_tensors
 
         if grad_out.dim() == 0:
             grad_out = grad_out.unsqueeze(0)
@@ -405,13 +414,25 @@ class EDHiGHSObjectiveFn(Function):
         df_dh = lam_ub * go  # (B,nineq)
         df_db = nu_eq * go  # (B,neq)
 
-        # Allocate grads (time-first shapes)
+        # Allocate grads (batched, time-first)
         g_load = torch.zeros_like(load)  # (B,T)
         g_solar = torch.zeros_like(solar_max)  # (B,T)
         g_wind = torch.zeros_like(wind_max)  # (B,T)
-        g_is_on = torch.zeros_like(is_on)  # (B,T,G)
+
+        # LP-space gradient for is_on (matches is_on_lp)
+        g_is_on_lp = torch.zeros_like(is_on_lp)  # (B,T,G_lp)
+
         g_is_chg = torch.zeros_like(is_charging)  # (B,T,S)
         g_is_dis = torch.zeros_like(is_discharging)  # (B,T,S)
+
+        # Full-thermal gradient buffer (what we must return)
+        B, T = load.shape[0], load.shape[1]
+        G_th_full = int(ctx.G_th_full)
+        g_is_on_full = torch.zeros(
+            (B, T, G_th_full), device=is_on_lp.device, dtype=is_on_lp.dtype
+        )
+
+        lp = form.lp_gen_idx  # (G_lp,) indices into FULL thermal ordering
 
         # ---- Inequality RHS that depend on inputs ----
 
@@ -440,14 +461,14 @@ class EDHiGHSObjectiveFn(Function):
             _, (t, s) = form.h_spec[row_id]
             g_is_dis[:, t, s] += df_dh[:, row_id] * (-form.st_min_discharge[s])
 
-        # thermal upper bounds depend on is_on
+        # thermal upper bounds depend on is_on (LP space)
         for row_id in form.ub_rows.get("pa_ub_on", []):
-            _, (t, g) = form.h_spec[row_id]
-            g_is_on[:, t, g] += df_dh[:, row_id] * form.th_power_diff[g]
+            _, (t, g) = form.h_spec[row_id]  # g in [0..G_lp-1]
+            g_is_on_lp[:, t, g] += df_dh[:, row_id] * form.th_power_diff[g]
 
         for row_id in form.ub_rows.get("seg_ub_on", []):
             _, (t, g, k) = form.h_spec[row_id]
-            g_is_on[:, t, g] += df_dh[:, row_id] * form.th_seg_mw[g, k]
+            g_is_on_lp[:, t, g] += df_dh[:, row_id] * form.th_seg_mw[g, k]
 
         # curtailment ub depends on load
         for row_id in form.ub_rows.get("curt_ub", []):
@@ -455,13 +476,16 @@ class EDHiGHSObjectiveFn(Function):
             g_load[:, t] += df_dh[:, row_id]
 
         # ---- Equality RHS that depend on inputs ----
-        # power balance RHS: b[t] = load[t] - sum_g pmin[g]*is_on[t,g]
+        # power balance RHS: b[t] = load[t] - sum_g pmin[g]*is_on[t,g]  (LP space)
         for row_id in form.eq_rows.get("power_balance", []):
             _, t = form.b_spec[row_id]
             g_load[:, t] += df_db[:, row_id]
-            g_is_on[:, t, :] += df_db[:, row_id].unsqueeze(1) * (
+            g_is_on_lp[:, t, :] += df_db[:, row_id].unsqueeze(1) * (
                 -form.th_min_power.view(1, -1)
             )
+
+        # ---- Scatter LP grads back to full thermal space ----
+        g_is_on_full[:, :, lp] = g_is_on_lp
 
         # Unbatch back to original shapes if caller passed unbatched tensors
         flags = ctx.shape_flags
@@ -472,7 +496,7 @@ class EDHiGHSObjectiveFn(Function):
         if flags["wind_was_1d"]:
             g_wind = g_wind.squeeze(0)
         if flags["is_on_was_2d"]:
-            g_is_on = g_is_on.squeeze(0)
+            g_is_on_full = g_is_on_full.squeeze(0)
         if flags["is_chg_was_2d"]:
             g_is_chg = g_is_chg.squeeze(0)
         if flags["is_dis_was_2d"]:
@@ -480,12 +504,12 @@ class EDHiGHSObjectiveFn(Function):
 
         # None for (form, rhs_builder) and scalar args
         return (
-            None,
-            None,
+            None,  # form
+            None,  # rhs_builder
             g_load,
             g_solar,
             g_wind,
-            g_is_on,
+            g_is_on_full,  # FULL thermal grad (matches input is_on)
             g_is_chg,
             g_is_dis,
             None,
@@ -525,7 +549,11 @@ class EDModelLP(nn.Module):
         ed_data_dict = create_data_dict(instance_path)
         self.lp_gen_idx = lp_gen_idx if lp_gen_idx is not None else torch.arange(51)
         self.form = EDFormulation(
-            ed_data_dict, eps=0.0, device=device, dtype=dtype, lp_gen_idx=self.lp_gen_idx
+            ed_data_dict,
+            eps=0.0,
+            device=device,
+            dtype=dtype,
+            lp_gen_idx=self.lp_gen_idx,
         )
         self.rhs = EDRHSBuilder(self.form)
 
