@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/default.yaml",
+        default="configs/debug_scipy.yaml",
         help="Path to config YAML",
     )
     return parser.parse_args()

@@ -1,0 +1,52 @@
+device: cpu
+is_debug: false
+seed: 42
+trainer:
+  name: scpiy_lp_trainer
+  max_epochs: 10
+  optimizer:
+    name: "Adam"
+    params:
+      lr: 0.001
+  batch_size: 1
+  do_val: true
+  val_every: 2
+  early_stopping_patience: 2
+  early_stopping_perc: 0.05
+
+  loss_fn: 
+     name: scipy_solver_loss
+     params:
+      instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
+      weights:
+        supervised: 1.0
+        ed_objective: 1.0
+        violations: 1.0
+
+dataset:
+  name: simple_dataset
+  params:
+    data_dir: "data/Train_Data"
+  splits:
+    train: 0.8
+    val: 0.2
+    test: 0.0
+  subset: 5
+
+model:
+  name: flexible_two_head_mlp
+  params:
+    input_size: 318
+    hidden_size: 128
+    num_hidden_layers: 3
+    round_thermal: "threshold_ste"
+
+ed_model:
+  name: lp_scipy
+  params:
+    instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
+
+paths: 
+  out_dir: "results/debug_scipy"
+
+

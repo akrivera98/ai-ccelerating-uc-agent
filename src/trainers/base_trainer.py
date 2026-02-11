@@ -53,6 +53,11 @@ class BaseTrainer(ABC):
         self.best_model = None
         self._es_counter = 0
 
+        # create output directory and save config
+        self.save_config()
+        out_dir = self.config.paths.out_dir
+        os.makedirs(out_dir, exist_ok=True)
+
         self.setup_training()
 
     def setup_training(self):
