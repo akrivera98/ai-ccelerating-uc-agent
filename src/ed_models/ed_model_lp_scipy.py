@@ -518,11 +518,15 @@ class EDModelLP(nn.Module):
         parallel_solve=True,
         lp_workers=None,
         parallel_min_batch=8,
+        lp_gen_idx=None,
     ):
         super().__init__()
         # NOTE: eps is irrelevant for HiGHS objective; keep eps=0.0 in the formulation
         ed_data_dict = create_data_dict(instance_path)
-        self.form = EDFormulation(ed_data_dict, eps=0.0, device=device, dtype=dtype)
+        self.lp_gen_idx = lp_gen_idx if lp_gen_idx is not None else torch.arange(51)
+        self.form = EDFormulation(
+            ed_data_dict, eps=0.0, device=device, dtype=dtype, lp_gen_idx=self.lp_gen_idx
+        )
         self.rhs = EDRHSBuilder(self.form)
 
         self.solver = EDHiGHSSolver(

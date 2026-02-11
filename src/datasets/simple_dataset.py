@@ -10,12 +10,23 @@ from src.registry import registry
 
 @registry.register_dataset("simple_dataset")
 class SimpleDataset(Dataset):
-    def __init__(self, *, data_dir: str):
+    def __init__(
+        self,
+        *,
+        data_dir: str,
+        fixed_off_gens=None,
+        fixed_on_gens=None,
+        include_profiled_utilization: bool = False,
+    ):
         self.data_dir = data_dir
+        self.fixed_off_gens = list(fixed_off_gens or [])
+        self.fixed_on_gens = list(fixed_on_gens or [])
+        self.include_profiled_utilization = include_profiled_utilization
 
         features = glob.glob(os.path.join(data_dir, "*", "explanatory_variables.xlsx"))
         targets = glob.glob(os.path.join(data_dir, "*", "response_variables.xlsx"))
         outputs = glob.glob(os.path.join(data_dir, "*", "OutputData.json.gz"))
+        inputs = glob.glob(os.path.join(data_dir, "*", "InputData.json.gz"))
 
         # Key everything by instance directory
         def key(p: str) -> str:
@@ -24,6 +35,7 @@ class SimpleDataset(Dataset):
         feat_map = {key(p): p for p in features}
         targ_map = {key(p): p for p in targets}
         out_map = {key(p): p for p in outputs}
+        in_map = {key(p): p for p in inputs}
 
         # Instance directories present in all three
         instance_dirs = sorted(feat_map.keys())
@@ -33,11 +45,55 @@ class SimpleDataset(Dataset):
         self.features_files = [feat_map[d] for d in instance_dirs]
         self.target_files = [targ_map[d] for d in instance_dirs]
         self.output_gz = [out_map[d] for d in instance_dirs]
+        self.input_gz = [in_map[d] for d in instance_dirs]
+
+        self.gen_names_all, self.fixed_off_idx, self.fixed_on_idx, self.pred_idx = (
+            self._build_generator_partitions()
+        )
+        self.lp_gen_idx = torch.cat([self.pred_idx, self.fixed_on_idx]).unique(
+            sorted=True
+        )  # gens included in the LP formulation
 
         # Final invariant check
         assert (
             len(self.features_files) == len(self.target_files) == len(self.output_gz)
         ), "Mismatch after alignment."
+
+    def _build_generator_partitions(self):
+        # cannonical ordering from the first instance
+        df_targets = pd.read_excel(self.target_files[0]).iloc[:, 1:]
+        all_sorted_gen_names = sorted(df_targets.columns)
+        G = len(all_sorted_gen_names)
+
+        name_to_idx = {name: i for i, name in enumerate(all_sorted_gen_names)}
+
+        # validate profied names
+        missing_off = [n for n in self.fixed_off_gens if n not in all_sorted_gen_names]
+        missing_on = [n for n in self.fixed_on_gens if n not in all_sorted_gen_names]
+
+        if missing_off or missing_on:
+            raise ValueError(
+                f"Fixed off gens not in data: {missing_off}, fixed on gens not in data: {missing_on}"
+            )
+
+        fixed_off_idx = torch.tensor(
+            [name_to_idx[n] for n in self.fixed_off_gens], dtype=torch.long
+        )
+        fixed_on_idx = torch.tensor(
+            [name_to_idx[n] for n in self.fixed_on_gens], dtype=torch.long
+        )
+
+        # check overlap
+        if set(fixed_off_idx.tolist()) & set(fixed_on_idx.tolist()):
+            raise ValueError("Some gens cannot be both fixed on and fixed off.")
+
+        # set as predicted everything else
+        pred_mask = torch.ones(G, dtype=torch.bool)
+        pred_mask[fixed_off_idx] = False
+        pred_mask[fixed_on_idx] = False
+        pred_idx = torch.arange(G, dtype=torch.long)[pred_mask]
+
+        return all_sorted_gen_names, fixed_off_idx, fixed_on_idx, pred_idx
 
     def __len__(self) -> int:
         assert len(self.features_files) == len(self.target_files), (
@@ -56,7 +112,7 @@ class SimpleDataset(Dataset):
         df_targets = pd.read_excel(path_targets).iloc[:, 1:]
 
         # Sort
-        sorted_gens = sorted(df_targets.columns)
+        sorted_gens = self.gen_names_all
         df_targets = df_targets[sorted_gens]
         df_init_conditions = df_init_conditions.set_index(df_init_conditions.columns[0])
         df_init_conditions = df_init_conditions.loc[sorted_gens]
@@ -80,6 +136,9 @@ class SimpleDataset(Dataset):
             "storage_names": sorted_storage,
             "charge_rates": charge_rates,
             "discharge_rates": discharge_rates,
+            # "profiled_gen_utilization": self._get_profiled_utilization(
+            #     path_gz, profiles
+            # ) if self.include_profiled_utilization else None,
         }
 
     def __getitem__(self, idx: int) -> dict:
@@ -138,3 +197,65 @@ class SimpleDataset(Dataset):
         )
 
         return storage_status, all_charge_rates, all_discharge_rates, storage_names
+
+    def _get_profiled_utilization(self, path_gz, profiles):
+        json_path = path_gz[:-3]  # strip ".gz"
+
+        input_json_path = self.input_gz[0][
+            :-3
+        ]  # you only need to read one input file to problem parameters
+
+        if os.path.exists(input_json_path):
+            with open(input_json_path, "r") as f:
+                input_data = json.load(f)
+        else:
+            with gzip.open(self.input_gz[0], "rt") as f:
+                input_data = json.load(f)
+
+        if os.path.exists(json_path):
+            with open(json_path, "r") as f:
+                output_data = json.load(f)
+        else:
+            with gzip.open(path_gz, "rt") as f:
+                output_data = json.load(f)
+
+        profiled_units_names = sorted(output_data["Profiled production (MW)"].keys())
+        profiled_generation = output_data["Profiled production (MW)"]
+        profiled_generation = torch.tensor(
+            [profiled_generation[gen] for gen in profiled_units_names],
+            dtype=torch.float32,
+        ).T  # (72, num_profiled_gens)
+
+        name_to_max = {
+            gen: gen_data["Maximum power (MW)"]
+            for gen, gen_data in input_data["Generators"].items()
+            if gen in profiled_units_names
+        }
+
+        max_cols = []
+        T = 72
+        for name in profiled_units_names:
+            if name in {"solar", "wind"}:
+                col = profiles[:, 1] if name == "wind" else profiles[:, 2]
+            else:
+                mx = name_to_max[name]
+
+                if isinstance(mx, (int, float)):
+                    # scalar -> expand to length T
+                    col = torch.full((T,), float(mx), dtype=torch.float32)
+                else:
+                    # list/array -> tensor, must be length T
+                    col = torch.tensor(mx, dtype=torch.float32)
+                    if col.numel() != T:
+                        raise ValueError(
+                            f"Max power for {name} has length {col.numel()}, expected {T}"
+                        )
+            max_cols.append(col)
+
+        # stack columns -> (T, G)
+        profiled_max = torch.stack(max_cols, dim=1)
+
+        # safe divide
+        profiled_max = torch.clamp(profiled_max, min=1e-6)
+        utilization = profiled_generation / profiled_max
+        return utilization

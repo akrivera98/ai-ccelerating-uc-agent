@@ -152,6 +152,7 @@ class TwoHeadMLP(nn.Module):
             "storage_logits": storage_logits,  # to be used in the loss
         }
 
+
 @registry.register_model("flexible_two_head_mlp")
 class TwoHeadMLP_Flex(nn.Module):
     def __init__(
@@ -165,9 +166,9 @@ class TwoHeadMLP_Flex(nn.Module):
         tau: float = 1.0,
         predict_storage: bool = True,
         # --- subset selection ---
-        gen_idx: Optional[Sequence[int]] = None,
-        gen_names: Optional[Sequence[str]] = None,
-        gen_names_all: Optional[Sequence[str]] = None,  # full ordered list length G
+        pred_gen_idx: Optional[Sequence[int]] = None,
+        fixed_on_idx=None,
+        fixed_off_idx=None,
         return_full_is_on: bool = True,
         # --- rounding ---
         round_thermal: str = "none",
@@ -186,28 +187,24 @@ class TwoHeadMLP_Flex(nn.Module):
         self.thermal_threshold = thermal_threshold
         self.round_storage = round_storage
 
-        # ---- resolve generator subset ----
-        if gen_idx is not None and gen_names is not None:
-            raise ValueError("Provide only one of gen_idx or gen_names, not both.")
+        if pred_gen_idx is None:
+            pred_gen_idx = list(range(G))
 
-        if gen_names is not None:
-            if gen_names_all is None:
-                raise ValueError(
-                    "If gen_names is provided, you must also provide gen_names_all."
-                )
-            name_to_idx = {name: i for i, name in enumerate(gen_names_all)}
-            missing = [n for n in gen_names if n not in name_to_idx]
-            if missing:
-                raise ValueError(
-                    f"gen_names contains unknown names: {missing[:5]} (showing up to 5)"
-                )
-            gen_idx = [name_to_idx[n] for n in gen_names]
+        if fixed_on_idx is None:
+            fixed_on_idx = []
+        if fixed_off_idx is None:
+            fixed_off_idx = []
 
-        if gen_idx is None:
-            gen_idx = list(range(G))
-
-        self.register_buffer("gen_idx", self.torch.tensor(gen_idx))
-        self.G_out = len(gen_idx)
+        self.register_buffer(
+            "pred_gen_idx", self.torch.tensor(pred_gen_idx, dtype=torch.long)
+        )
+        self.register_buffer(
+            "fixed_on_idx", self.torch.tensor(fixed_on_idx, dtype=torch.long)
+        )
+        self.register_buffer(
+            "fixed_off_idx", self.torch.tensor(fixed_off_idx, dtype=torch.long)
+        )
+        self.G_out = len(self.pred_gen_idx)
 
         # ---- trunk ----
         layers = [nn.Linear(input_size, hidden_size), nn.ReLU()]
@@ -293,24 +290,35 @@ class TwoHeadMLP_Flex(nn.Module):
             thermal_probs, thermal_logits
         )  # (B, T, G_out)
 
-        # scatter back to full (B, T, G) if requested and subset is used
-        if self.return_full_is_on and self.G_out != self.G:
+        # scatter back to full (B, T, G) if requested
+        if self.return_full_is_on:
+            # start with zeros
             is_on_full = self.torch.zeros(
                 B,
                 self.T,
                 self.G,
                 device=thermal_decisions.device,
+                dtype=thermal_decisions.dtype,
             )
-            is_on_full[:, :, self.gen_idx] = thermal_decisions
+
+            # predicted gens
+            is_on_full[:, :, self.pred_gen_idx] = thermal_decisions
+
+            # fixed gens override
+            if self.fixed_on_idx.numel() > 0:
+                is_on_full[:, :, self.fixed_on_idx] = 1.0
+            if self.fixed_off_idx.numel() > 0:
+                is_on_full[:, :, self.fixed_off_idx] = 0.0
+
             is_on_out = is_on_full
         else:
-            is_on_out = thermal_decisions  # (B, T, G_out) or (B, T, G)
+            is_on_out = thermal_decisions  # (B, T, G_out)
 
         out = {
             "is_on": is_on_out,
             "thermal_logits": thermal_logits,
             "thermal_probs": thermal_probs,
-            "gen_idx": self.gen_idx,
+            "pred_gen_idx": self.pred_gen_idx,
         }
 
         # ---- storage (optional, time-first) ----

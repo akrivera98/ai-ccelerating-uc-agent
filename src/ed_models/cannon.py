@@ -138,15 +138,24 @@ class EDFormulation(nn.Module):
       - do any multiprocessing / bound extraction
     """
 
-    def __init__(self, ed_data_dict, *, eps=1e-3, device="cpu", dtype=torch.float32):
+    def __init__(
+        self,
+        ed_data_dict,
+        *,
+        eps=1e-3,
+        device="cpu",
+        dtype=torch.float32,
+        lp_gen_idx=list(range(51)),
+    ):
         super().__init__()
         self.eps = float(eps)
         self.device = torch.device(device)
         self.dtype = dtype
+        self.lp_gen_idx = torch.tensor(lp_gen_idx, dtype=torch.long)
 
         # ---- shapes / indexing ----
         T = len(ed_data_dict["system_data"].load)
-        G = len(ed_data_dict["thermal_gen_data_list"])
+        G = len(lp_gen_idx)
         P = len(ed_data_dict["profiled_gen_data_list"])
         S = len(ed_data_dict["storage_data_list"])
         K = max(
@@ -399,34 +408,56 @@ class EDFormulation(nn.Module):
 
     def _add_thermal_rows(self, builder: RowBuilder, ed_data_dict):
         sh, idx = self.sh, self.idx
-        thermals = sorted(ed_data_dict["thermal_gen_data_list"], key=lambda g: g.name)
-        G, T, K = sh.G, sh.T, sh.K
+
+        # full thermal list in canonical order for thermals
+        thermals_all = sorted(
+            ed_data_dict["thermal_gen_data_list"], key=lambda g: g.name
+        )
+
+        # ---- reduce thermals using lp_gen_idx ----
+        lp = self.lp_gen_idx  # LongTensor of indices into thermals_all
+        thermals = [thermals_all[i] for i in lp.tolist()]  # reduced thermal list
+
+        # IMPORTANT: from this point on, G is the reduced thermal count
+        T, K = sh.T, sh.K
+        G = len(thermals)
+
         self.thermal_units_names = [g.name for g in thermals]
 
+        # min/max power aligned to reduced thermal list
         min_power = torch.tensor(
             [g.min_power for g in thermals], device=builder.device, dtype=builder.dtype
-        )
+        )  # (G,)
+
         max_power = torch.tensor(
             [g.max_power for g in thermals], device=builder.device, dtype=builder.dtype
-        )
+        )  # (G,)
 
         power_diff = torch.clamp(max_power - min_power, min=0.0)
         power_diff = torch.where(
             power_diff < 1e-7, torch.zeros_like(power_diff), power_diff
         )
 
+        # segment data aligned to reduced thermal list
         seg_mw = torch.zeros((G, K), device=builder.device, dtype=builder.dtype)
         seg_cost = torch.zeros((G, K), device=builder.device, dtype=builder.dtype)
+
         for gi, g in enumerate(thermals):
             curve = g.production_cost_curve  # list of (mw, cost)
-            n = len(curve)
-            seg_mw[gi, :n] = torch.tensor(
-                [mw for mw, _ in curve], device=builder.device, dtype=builder.dtype
-            )
-            seg_cost[gi, :n] = torch.tensor(
-                [c for _, c in curve], device=builder.device, dtype=builder.dtype
-            )
+            n = min(len(curve), K)
+            if n > 0:
+                seg_mw[gi, :n] = torch.tensor(
+                    [mw for mw, _ in curve[:n]],
+                    device=builder.device,
+                    dtype=builder.dtype,
+                )
+                seg_cost[gi, :n] = torch.tensor(
+                    [c for _, c in curve[:n]],
+                    device=builder.device,
+                    dtype=builder.dtype,
+                )
 
+        # store reduced tensors
         self.register_buffer("th_min_power", min_power)
         self.register_buffer("th_max_power", max_power)
         self.register_buffer("th_power_diff", power_diff)
@@ -553,6 +584,7 @@ class EDRHSBuilder(nn.Module):
 
         B = load.shape[0]
         form = self.form
+        is_on = is_on[:, :, form.lp_gen_idx]  # (B,T,G) -> (B,T,|LP|)
 
         # Allocate RHS
         h = torch.zeros((B, form.nineq), device=self.device, dtype=self.dtype)

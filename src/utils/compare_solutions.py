@@ -46,11 +46,11 @@ def load_competiton_solution(output_path: str):
         storage_levels.append(np.array(data))
 
     competition_solution = {
-        "profiled_generation": np.stack(profiled_generation),
-        "thermal_generation": np.stack(thermal_generation),
-        "charge_rate": np.stack(charge_rates),
-        "discharge_rate": np.stack(discharge_rates),
-        "storage_level": np.stack(storage_levels),
+        "profiled_generation": np.stack(profiled_generation).T,
+        "thermal_generation": np.stack(thermal_generation).T,
+        "charge_rate": np.stack(charge_rates).T,
+        "discharge_rate": np.stack(discharge_rates).T,
+        "storage_level": np.stack(storage_levels).T,
         "curtailment": np.array(output_data["Load curtail (MW)"]["b1"]),
         "thermal_units_names": thermal_units_names,
         "profiled_units_names": profiled_units_names,
@@ -214,8 +214,11 @@ def unpack_lp_solution(y, ed_model_qp):
     ed_model_qp: instance of EDModelQP (or EDModelLP)
     Returns a dict with arrays shaped like competition_solution.
     """
-    sh = ed_model_qp.sh
-    idx = ed_model_qp.idx
+    # sh = ed_model_qp.sh
+    # idx = ed_model_qp.idx
+
+    sh = ed_model_qp.form.sh
+    idx = ed_model_qp.form.idx
 
     # to numpy, ensure shape (B, nz)
     if torch.is_tensor(y):
@@ -226,30 +229,30 @@ def unpack_lp_solution(y, ed_model_qp):
     B, nz = y.shape
     assert nz == idx.nz, f"Expected nz={idx.nz}, got {nz}"
 
-    prof = np.zeros((B, sh.P, sh.T))
-    therm_pa = np.zeros((B, sh.G, sh.T))
+    prof = np.zeros((B, sh.T, sh.P))
+    therm_pa = np.zeros((B, sh.T, sh.G))
     curt = np.zeros((B, sh.T))
-    ch = np.zeros((B, sh.S, sh.T))
-    dis = np.zeros((B, sh.S, sh.T))
-    level = np.zeros((B, sh.S, sh.T))
+    ch = np.zeros((B, sh.T, sh.S))
+    dis = np.zeros((B, sh.T, sh.S))
+    level = np.zeros((B, sh.T, sh.S))
 
     for b in range(B):
         for p in range(sh.P):
             for t in range(sh.T):
-                prof[b, p, t] = y[b, idx.pg(p, t)]
+                prof[b, t, p] = y[b, idx.pg(t, p)]
 
         for g in range(sh.G):
             for t in range(sh.T):
-                therm_pa[b, g, t] = y[b, idx.pa(g, t)]
+                therm_pa[b, t, g] = y[b, idx.pa(t, g)]
 
         for t in range(sh.T):
             curt[b, t] = y[b, idx.curt(t)]
 
         for s in range(sh.S):
             for t in range(sh.T):
-                ch[b, s, t] = y[b, idx.cr(s, t)]
-                dis[b, s, t] = y[b, idx.dr(s, t)]
-                level[b, s, t] = y[b, idx.s(s, t)]
+                ch[b, t, s] = y[b, idx.cr(t, s)]
+                dis[b, t, s] = y[b, idx.dr(t, s)]
+                level[b, t, s] = y[b, idx.s(t, s)]
 
     out = {
         "profiled_generation": prof.squeeze(0),
@@ -260,14 +263,14 @@ def unpack_lp_solution(y, ed_model_qp):
     }
 
     # Thermal generation = pmin + pa when pa > 0
-    pa = therm_pa.squeeze(0)  # (G,T)
+    pa = therm_pa.squeeze(0)  # (T,G)
     tol = 1e-6
     nonzero = np.abs(pa) > tol
-    pmin = ed_model_qp.th_min_power.detach().cpu().numpy()[:, None]
+    pmin = ed_model_qp.form.th_min_power.detach().cpu().numpy()[None, :]
     out["thermal_generation"] = pa + np.where(nonzero, pmin, 0.0)
 
-    out["thermal_units_names"] = ed_model_qp.thermal_units_names
-    out["profiled_units_names"] = ed_model_qp.profiled_units_names
-    out["storage_units_names"] = ed_model_qp.storage_units_names
+    out["thermal_units_names"] = ed_model_qp.form.thermal_units_names
+    out["profiled_units_names"] = ed_model_qp.form.profiled_units_names
+    out["storage_units_names"] = ed_model_qp.form.storage_units_names
 
     return out
