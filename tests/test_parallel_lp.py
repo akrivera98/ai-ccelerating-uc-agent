@@ -84,11 +84,11 @@ def run_objective(model, batch_tensors, parallel: bool):
     return f.detach().cpu(), (t1 - t0)
 
 
-def main(lp_workers, chunks_per_worker):
+def main(lp_workers, chunks_per_worker, batch_size):
     # ---- user params ----
     data_dir = "data/Train_Data"  # directory containing instance JSON files
     instance_path = "data/Train_Data/instance_2021_Q1_1/InputData.json"  # for EDModelLP/create_data_dict
-    B = 512
+    B = batch_size
     device = "cpu"
     dtype = torch.float32
 
@@ -190,15 +190,17 @@ def main(lp_workers, chunks_per_worker):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("n_workers")
-    parser.add_argument("-chunks_per_worker", default=1, type=int)
+    parser.add_argument('n_workers')
+    parser.add_argument('--chunks_per_worker', default=1, type=int)
+    parser.add_argument('--batch_size', default=512, type=int)
     args = parser.parse_args()
     lp_workers = int(args.n_workers)
     chunks_per_worker = args.chunks_per_worker
-    speedup = main(lp_workers, chunks_per_worker)
+    speedup = main(lp_workers, chunks_per_worker, batch_size=args.batch_size)
     print(
         f"RESULT workers={args.n_workers} "
         f"chunks={args.chunks_per_worker} "
+        f"batch_size={args.batch_size} "
         f"speedup={speedup:.6f}",
         flush=True,
     )
