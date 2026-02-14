@@ -21,25 +21,24 @@ export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 # ---- Fixed during worker sweep ----
-CHUNKS_PER_WORKER=4 # not used in the runs, default will be 1
 REPEATS=3
-BATCH_SZ=128
+BATCH_SZ=512
 
-# ---- Worker sweep ----
-WORKERS_LIST=(1 2 4 8 12 16 20 24 28 32 36)
-
+# ---- CHUNK sweep ----
+CHUNKS_LIST=(1 2 4 8 10 12)
+W=8
 source .venv/bin/activate
 
-for W in "${WORKERS_LIST[@]}"; do
+for C in "${CHUNKS_LIST[@]}"; do
     echo ""
     echo "======================================="
-    echo "Testing workers = $W"
+    echo "Testing chunks = $C"
     echo "======================================="
 
     for r in $(seq 1 $REPEATS); do
         echo "---- Repeat $r / $REPEATS ----"
 
-        python -u tests/test_parallel_lp.py $W --batch_size $BATCH_SZ
+        python -u tests/test_parallel_lp.py $W --batch_size $BATCH_SZ --chunks_per_worker $C
     done
 done
 
