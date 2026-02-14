@@ -1,5 +1,5 @@
 import json
-from src.datasets.simple_dataset import SimpleDataset
+from src.datasets.uc_dataset import UCDataset
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,7 +69,7 @@ def plot_share_boxplot_vs_time(shares, max_hours=None):
     plt.show()
 
 
-def compute_frequencies(dataset: SimpleDataset, save_path=None, reload=False):
+def compute_frequencies(dataset: UCDataset, save_path=None, reload=False):
     if os.path.exists(save_path) and not reload:
         with open(save_path, "rb") as f:
             commitment_frequencies = pickle.load(f)
@@ -327,7 +327,7 @@ def plot_heatmap(
 
 
 def compute_expected_commitment_given_load(
-    dataset: SimpleDataset, n_bins=10, max_load=None, save_path=None, reload=False
+    dataset: UCDataset, n_bins=10, max_load=None, save_path=None, reload=False
 ):
     if save_path is not None and not reload:
         if os.path.exists(save_path):
@@ -548,7 +548,7 @@ def plot_gen_commitment_heatmap(
     plt.show()
 
 
-def _get_max_load(dataset: SimpleDataset):
+def _get_max_load(dataset: UCDataset):
     seen_max_load = float("-inf")
     seen_min_load = float("inf")
     seen_min_net_load = float("inf")

@@ -1,2 +1,2 @@
-from .ed_model import UCModel
-from .ed_model_lp_scipy_parallel import EDModelLP
+from .ed_model_cvxpy import UCModel
+from .ed_model_lp_scipy import EDModelLP

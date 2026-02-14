@@ -1,6 +1,5 @@
 from src.registry import registry
 import os
-from concurrent.futures import ProcessPoolExecutor
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -9,45 +8,33 @@ import torch.nn as nn
 from torch.autograd import Function
 from scipy.optimize import linprog
 from scipy import sparse
+from joblib import Parallel, delayed
 
 from src.ed_models.cannon import EDFormulation, EDRHSBuilder
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
+import time
 # ============================================================
 # Multiprocessing helpers for HiGHS
 # ============================================================
 
-_G_AUB = None
-_G_AEQ = None
-_G_OPTIONS = None
 
-
-def _init_highs_worker(A_ub, A_eq, highs_time_limit):
-    global _G_AUB, _G_AEQ, _G_OPTIONS
-    _G_AUB = A_ub
-    _G_AEQ = A_eq
-    _G_OPTIONS = (
-        {"time_limit": highs_time_limit} if highs_time_limit is not None else None
-    )
-
-
-def _solve_highs_one(args):
+def _solve_highs_one(c, h_ub, b_eq, bounds, A_ub, A_eq, options):
     """
-    args = (c, h_ub, b_eq, bounds)
     Returns (ok, msg, fun, x, lam_ub, nu_eq)
     """
-    c, h_ub, b_eq, bounds = args
     res = linprog(
         c=c,
-        A_ub=_G_AUB,
+        A_ub=A_ub,
         b_ub=h_ub,
-        A_eq=_G_AEQ,
+        A_eq=A_eq,
         b_eq=b_eq,
         bounds=bounds,
         method="highs",
-        options=_G_OPTIONS,
+        options=options,
     )
     if not res.success:
         return (False, res.message, None, None, None, None)
+
     return (
         True,
         None,
@@ -56,6 +43,39 @@ def _solve_highs_one(args):
         res.ineqlin.marginals,
         res.eqlin.marginals,
     )
+
+
+def _solve_highs_chunk(idxs, c_np, h_np, b_np, A_ub, A_eq, options):
+    """
+    Solve a chunk of LPs identified by `idxs` (list/array of batch indices).
+
+    Returns:
+      idxs_out, ok, msg, funs, lams, nus
+    where funs/lams/nus are aligned with idxs_out.
+    """
+    funs = []
+    lams = []
+    nus = []
+    for i in idxs:
+        res = linprog(
+            c=c_np[i],
+            A_ub=A_ub,
+            b_ub=h_np[i],
+            A_eq=A_eq,
+            b_eq=b_np[i],
+            bounds=None,  # full-G path; keep consistent
+            method="highs",
+            options=options,
+        )
+        if not res.success:
+            return (idxs, False, f"batch {i}: {res.message}", None, None, None)
+
+
+        funs.append(float(res.fun))
+        lams.append(res.ineqlin.marginals)
+        nus.append(res.eqlin.marginals)
+
+    return (idxs, True, None, funs, lams, nus)
 
 
 # ============================================================
@@ -101,7 +121,9 @@ class EDHiGHSSolver(nn.Module):
         )
 
         # Precompute bound extraction masks from FULL G (on CPU / torch)
-        self._precompute_bounds()
+        if self.extract_bounds: 
+            self._precompute_bounds()
+
 
     def _precompute_bounds(self):
         with torch.no_grad():
@@ -294,6 +316,7 @@ class EDHiGHSObjectiveFn(Function):
         parallel_solve: bool = True,
         lp_workers: Optional[int] = None,
         parallel_min_batch: int = 8,
+        chunks_per_worker: int = 1,
     ):
         ctx.G_th_full = is_on.shape[-1]
 
@@ -323,7 +346,7 @@ class EDHiGHSObjectiveFn(Function):
         b_np = b.detach().cpu().numpy().astype(np.float64, copy=False)  # (B,neq)
 
         tasks = [
-            (c_np[i], h_np[i], b_np[i], None) for i in range(B)
+            (c_np[i], h_np[i], b_np[i], (None, None)) for i in range(B)
         ]  # bounds=None (full G)
 
         f_list = []
@@ -356,26 +379,46 @@ class EDHiGHSObjectiveFn(Function):
                 lam_list.append(res.ineqlin.marginals)
                 nu_list.append(res.eqlin.marginals)
         else:
-            max_workers = lp_workers
-            if max_workers is None:
-                max_workers = min(os.cpu_count() or 1, B)
+            cpu = os.cpu_count() or 1
+            requested = lp_workers if lp_workers is not None else cpu
+            n_jobs = min(requested, cpu, B)
 
-            with ProcessPoolExecutor(
-                max_workers=max_workers,
-                initializer=_init_highs_worker,
-                initargs=(A_ub, A_eq, highs_time_limit),
-            ) as ex:
-                outs = list(ex.map(_solve_highs_one, tasks))
+            # ---- build chunks ----
+            # Default: 2 chunks per worker (good load balance with low overhead)
+            n_chunks = min(B, chunks_per_worker * n_jobs)
+            chunk_size = (B + n_chunks - 1) // n_chunks  # ceil
 
-            for i, (ok, msg, fun, x, lam, nu) in enumerate(outs):
+            chunks = [
+                list(range(s, min(B, s + chunk_size))) for s in range(0, B, chunk_size)
+            ]
+
+            outs = Parallel(n_jobs=n_jobs, backend="loky")(
+                delayed(_solve_highs_chunk)(idxs, c_np, h_np, b_np, A_ub, A_eq, options={"time_limit": highs_time_limit})
+                for idxs in chunks
+            )
+
+            # Scatter back into per-batch lists
+            f_list = [None] * B
+            lam_list = [None] * B
+            nu_list = [None] * B
+
+            total_compute = 0.0
+            total_lp = 0.0
+            total_overhead = 0.0
+
+            for idxs, ok, msg, funs, lams, nus in outs:
                 if not ok:
-                    raise RuntimeError(f"HiGHS LP failed (batch {i}): {msg}")
-                f_list.append(fun)
-                lam_list.append(lam)
-                nu_list.append(nu)
+                    raise RuntimeError(f"HiGHS LP failed: {msg}")
+
+                for k, i in enumerate(idxs):
+                    f_list[i] = funs[k]
+                    lam_list[i] = lams[k]
+                    nu_list[i] = nus[k]
 
         device = form.device
         dtype = load.dtype
+
+        assert all(v is not None for v in f_list)
 
         f = torch.as_tensor(np.array(f_list), device=device, dtype=dtype)  # (B,)
         lam_ub = torch.as_tensor(
@@ -519,7 +562,7 @@ class EDHiGHSObjectiveFn(Function):
         )
 
 
-@registry.register_ed_model("lp_scipy")
+@registry.register_ed_model("lp_scipy_parallel")
 class EDModelLP(nn.Module):
     """
     Full SciPy/HiGHS “version” in the same clean architecture:
@@ -537,17 +580,20 @@ class EDModelLP(nn.Module):
         instance_path,
         device="cpu",
         dtype=torch.float32,
-        extract_bounds=True,
+        extract_bounds=False,
         use_sparse=True,
         parallel_solve=True,
         lp_workers=None,
         parallel_min_batch=8,
         lp_gen_idx=None,
+        chunks_per_worker=1,
     ):
         super().__init__()
         # NOTE: eps is irrelevant for HiGHS objective; keep eps=0.0 in the formulation
         ed_data_dict = create_data_dict(instance_path)
         self.lp_gen_idx = lp_gen_idx if lp_gen_idx is not None else torch.arange(51)
+        self.chunks_per_worker = chunks_per_worker
+
         self.form = EDFormulation(
             ed_data_dict,
             eps=0.0,
@@ -555,8 +601,8 @@ class EDModelLP(nn.Module):
             dtype=dtype,
             lp_gen_idx=self.lp_gen_idx,
         )
-        self.rhs = EDRHSBuilder(self.form)
 
+        self.rhs = EDRHSBuilder(self.form)
         self.solver = EDHiGHSSolver(
             self.form,
             self.rhs,
@@ -615,4 +661,4 @@ class EDModelLP(nn.Module):
             self.parallel_solve,
             self.lp_workers,
             self.parallel_min_batch,
-        )
+            self.chunks_per_worker)

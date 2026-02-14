@@ -4,8 +4,9 @@ import argparse
 
 # Adjust these imports to your project
 from torch.utils.data import DataLoader
-from src.ed_models.ed_model_lp_scipy_parallel import EDModelLP
-from src.datasets.simple_dataset import SimpleDataset  # or whatever your Dataset class is
+from src.ed_models.ed_model_lp_scipy import EDModelLP
+from src.datasets.uc_dataset import UCDataset  # or whatever your Dataset class is
+
 
 def run_objective_and_backward(model, batch_tensors, parallel: bool):
     load, solar, wind, is_on, is_chg, is_dis = batch_tensors
@@ -28,8 +29,12 @@ def run_objective_and_backward(model, batch_tensors, parallel: bool):
         "solar": solar.grad.detach().cpu().clone() if solar.grad is not None else None,
         "wind": wind.grad.detach().cpu().clone() if wind.grad is not None else None,
         "is_on": is_on.grad.detach().cpu().clone() if is_on.grad is not None else None,
-        "is_chg": is_chg.grad.detach().cpu().clone() if is_chg.grad is not None else None,
-        "is_dis": is_dis.grad.detach().cpu().clone() if is_dis.grad is not None else None,
+        "is_chg": is_chg.grad.detach().cpu().clone()
+        if is_chg.grad is not None
+        else None,
+        "is_dis": is_dis.grad.detach().cpu().clone()
+        if is_dis.grad is not None
+        else None,
     }
     return f.detach().cpu(), loss.detach().cpu().item(), grads, (t1 - t0)
 
@@ -87,7 +92,7 @@ def main(lp_workers, chunks_per_worker):
     device = "cpu"
     dtype = torch.float32
 
-    ds = SimpleDataset(data_dir=data_dir)
+    ds = UCDataset(data_dir=data_dir)
 
     dl = DataLoader(
         ds, batch_size=B, shuffle=False, num_workers=0, collate_fn=collate_uc
@@ -128,7 +133,7 @@ def main(lp_workers, chunks_per_worker):
 
     max_diff = torch.max(torch.abs(f_ser - f_par)).item()
 
-    speedup = t_ser / t_par if t_par > 0 else float('inf')
+    speedup = t_ser / t_par if t_par > 0 else float("inf")
 
     #     # -----------------------------
     # # Backward pass check
@@ -179,13 +184,14 @@ def main(lp_workers, chunks_per_worker):
     #         print(f"grad[{k}]: None (no grad)")
     #     else:
     #         print(f"Max |grad_{k} serial - parallel|: {d:.3e}")
-    
+
     return speedup
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('n_workers')
-    parser.add_argument('-chunks_per_worker', default=1, type=int)
+    parser.add_argument("n_workers")
+    parser.add_argument("-chunks_per_worker", default=1, type=int)
     args = parser.parse_args()
     lp_workers = int(args.n_workers)
     chunks_per_worker = args.chunks_per_worker

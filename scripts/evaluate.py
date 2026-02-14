@@ -1,10 +1,10 @@
 import argparse
 
 import torch
-from src.datasets.simple_dataset import SimpleDataset
+from src.datasets.uc_dataset import UCDataset
 from torch.utils.data import Subset, DataLoader
 from src.models.ed_model_qp import EDModelLP
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
 from src.models.fnn import TwoHeadMLP
 from src.utils.evaluation import run_standard_evaluation
 import yaml
@@ -56,7 +56,7 @@ def main():
     args = parse_args()
 
     # Build test dataset
-    full_ds = SimpleDataset(args.data_dir)
+    full_ds = UCDataset(args.data_dir)
     test_indices = load_test_indices(args.test_indices)
     test_ds = Subset(full_ds, test_indices)
     test_loader = DataLoader(test_ds, batch_size=32, shuffle=False)

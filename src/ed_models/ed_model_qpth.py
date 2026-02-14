@@ -5,6 +5,7 @@ from qpth.qp import QPFunction, QPSolvers
 from src.ed_models.cannon import EDFormulation, EDRHSBuilder
 from src.registry import registry
 
+# TODO: this hasn't been tested
 
 class EDQPTHSolver(nn.Module):
     """

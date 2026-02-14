@@ -1,6 +1,6 @@
 import torch
 from src.models.ed_model_qp import EDModelQP
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
 import pandas as pd
 import json
 

@@ -3,7 +3,7 @@ import json
 import torch
 import pandas as pd
 
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
 from src.ed_models.ed_model_lp_scipy import EDModelLP
 import pickle
 

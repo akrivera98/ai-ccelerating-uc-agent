@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import cvxpy as cp
 import numpy as np
-from src.ed_models.data_classes import (
+from src.ed_models.data_utils import (
     SystemData,
     StorageUnitData,
     ThermalGeneratorData,

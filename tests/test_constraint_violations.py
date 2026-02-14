@@ -1,13 +1,13 @@
 from src.losses.losses import CustomLoss
-from src.datasets.simple_dataset import SimpleDataset
-from src.ed_models.data_classes import create_data_dict
+from src.datasets.uc_dataset import UCDataset
+from src.ed_models.data_utils import create_data_dict
 
 
 data_dir = "data/starting_kit_ai-uc_v2/Train_Data"
 ed_instance_path = (
     "data/starting_kit_ai-uc_v2/Train_Data/instance_2021_Q1_1/InputData.json"
 )
-dataset = SimpleDataset(data_dir=data_dir)
+dataset = UCDataset(data_dir=data_dir)
 
 data_dict = create_data_dict(ed_instance_path)
 

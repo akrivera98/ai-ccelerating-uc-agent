@@ -1,7 +1,7 @@
-from src.datasets.simple_dataset import SimpleDataset
+from src.datasets.uc_dataset import UCDataset
 
 data_dir = "data/Train_Data"
 
-dataset = SimpleDataset(data_dir)
+dataset = UCDataset(data_dir)
 
 print(dataset[0])

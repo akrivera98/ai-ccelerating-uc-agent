@@ -1,6 +1,7 @@
-from src.datasets.simple_dataset import SimpleDataset
+from src.datasets.uc_dataset import UCDataset
+
 data_dir = "data/starting_kit_ai-uc_v2/Train_Data"
-dataset = SimpleDataset(data_dir=data_dir)  # change the data_dir later
+dataset = UCDataset(data_dir=data_dir)  # change the data_dir later
 
 for i in range(len(dataset)):
-    _  = dataset[i]
+    _ = dataset[i]

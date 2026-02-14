@@ -8,7 +8,7 @@ from src.ed_models.components import (
 )
 
 # from cvxpylayers.jax import CvxpyLayer as JaxCvxpyLayer
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
 from src.registry import registry
 
 

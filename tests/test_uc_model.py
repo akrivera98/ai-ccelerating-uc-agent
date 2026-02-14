@@ -1,6 +1,6 @@
 import numpy as np
 from src.models.ed_model import UCModel
-from src.ed_models.data_classes import create_data_dict
+from src.ed_models.data_utils import create_data_dict
 
 sample_path = "sample.json"
 data_dict = create_data_dict(sample_path)

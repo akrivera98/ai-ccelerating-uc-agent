@@ -9,7 +9,7 @@ from src.registry import registry
 
 
 @registry.register_dataset("simple_dataset")
-class SimpleDataset(Dataset):
+class UCDataset(Dataset):
     def __init__(
         self,
         *,
