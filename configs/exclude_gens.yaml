@@ -8,7 +8,7 @@ trainer:
     name: "Adam"
     params:
       lr: 0.001
-  batch_size: 32
+  batch_size: 256
   do_val: true
   val_every: 5
   early_stopping_patience: 3
@@ -63,15 +63,17 @@ model:
   params:
     input_size: 318
     hidden_size: 128
-    num_hidden_layers: 3
+    num_hidden_layers: 5
     round_thermal: "threshold_ste"
 
 ed_model:
   name: lp_scipy
   params:
     instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
+    parallel_solve: True
+    lp_workers: 8
 
 paths: 
-  out_dir: "results/less_gens"
+  out_dir: "results/less_gens_parallel"
 
 

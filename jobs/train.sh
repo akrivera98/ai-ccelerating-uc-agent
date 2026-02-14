@@ -14,4 +14,4 @@ source .venv/bin/activate
 
 CONFIG=${1:-configs/exclude_gens.yaml}
 
-python -u clean_main.py --config "$CONFIG"
+python -u main.py --config "$CONFIG"

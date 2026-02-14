@@ -562,7 +562,7 @@ class EDHiGHSObjectiveFn(Function):
         )
 
 
-@registry.register_ed_model("lp_scipy_parallel")
+@registry.register_ed_model("lp_scipy")
 class EDModelLP(nn.Module):
     """
     Full SciPy/HiGHS “version” in the same clean architecture:

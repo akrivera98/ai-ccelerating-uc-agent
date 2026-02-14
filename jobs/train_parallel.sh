@@ -4,8 +4,8 @@
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --partition=mit_normal
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=128G
 
 set -euo pipefail
 mkdir -p logs
@@ -27,4 +27,4 @@ CONFIG=${1:-configs/exclude_gens.yaml}
 echo "Using LP_WORKERS=${LP_WORKERS}"
 echo "Config: ${CONFIG}"
 
-python -u clean_main.py --config "$CONFIG"
+python -u main.py --config "$CONFIG"
