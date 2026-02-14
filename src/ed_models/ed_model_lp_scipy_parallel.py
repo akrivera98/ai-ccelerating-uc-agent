@@ -12,6 +12,7 @@ from joblib import Parallel, delayed
 
 from src.ed_models.cannon import EDFormulation, EDRHSBuilder
 from src.ed_models.data_classes import create_data_dict
+import time
 # ============================================================
 # Multiprocessing helpers for HiGHS
 # ============================================================
@@ -55,7 +56,6 @@ def _solve_highs_chunk(idxs, c_np, h_np, b_np, A_ub, A_eq, options):
     funs = []
     lams = []
     nus = []
-
     for i in idxs:
         res = linprog(
             c=c_np[i],
@@ -69,6 +69,7 @@ def _solve_highs_chunk(idxs, c_np, h_np, b_np, A_ub, A_eq, options):
         )
         if not res.success:
             return (idxs, False, f"batch {i}: {res.message}", None, None, None)
+
 
         funs.append(float(res.fun))
         lams.append(res.ineqlin.marginals)
@@ -120,7 +121,9 @@ class EDHiGHSSolver(nn.Module):
         )
 
         # Precompute bound extraction masks from FULL G (on CPU / torch)
-        self._precompute_bounds()
+        if self.extract_bounds: 
+            self._precompute_bounds()
+
 
     def _precompute_bounds(self):
         with torch.no_grad():
@@ -313,6 +316,7 @@ class EDHiGHSObjectiveFn(Function):
         parallel_solve: bool = True,
         lp_workers: Optional[int] = None,
         parallel_min_batch: int = 8,
+        chunks_per_worker: int = 1,
     ):
         ctx.G_th_full = is_on.shape[-1]
 
@@ -379,14 +383,8 @@ class EDHiGHSObjectiveFn(Function):
             requested = lp_workers if lp_workers is not None else cpu
             n_jobs = min(requested, cpu, B)
 
-            # HiGHS options
-            options = {"threads": 1}
-            if highs_time_limit is not None:
-                options["time_limit"] = highs_time_limit
-
             # ---- build chunks ----
             # Default: 2 chunks per worker (good load balance with low overhead)
-            chunks_per_worker = 2
             n_chunks = min(B, chunks_per_worker * n_jobs)
             chunk_size = (B + n_chunks - 1) // n_chunks  # ceil
 
@@ -395,7 +393,7 @@ class EDHiGHSObjectiveFn(Function):
             ]
 
             outs = Parallel(n_jobs=n_jobs, backend="loky")(
-                delayed(_solve_highs_chunk)(idxs, c_np, h_np, b_np, A_ub, A_eq, options)
+                delayed(_solve_highs_chunk)(idxs, c_np, h_np, b_np, A_ub, A_eq, options={"time_limit": highs_time_limit})
                 for idxs in chunks
             )
 
@@ -404,9 +402,14 @@ class EDHiGHSObjectiveFn(Function):
             lam_list = [None] * B
             nu_list = [None] * B
 
+            total_compute = 0.0
+            total_lp = 0.0
+            total_overhead = 0.0
+
             for idxs, ok, msg, funs, lams, nus in outs:
                 if not ok:
                     raise RuntimeError(f"HiGHS LP failed: {msg}")
+
                 for k, i in enumerate(idxs):
                     f_list[i] = funs[k]
                     lam_list[i] = lams[k]
@@ -577,17 +580,20 @@ class EDModelLP(nn.Module):
         instance_path,
         device="cpu",
         dtype=torch.float32,
-        extract_bounds=True,
+        extract_bounds=False,
         use_sparse=True,
         parallel_solve=True,
         lp_workers=None,
         parallel_min_batch=8,
         lp_gen_idx=None,
+        chunks_per_worker=1,
     ):
         super().__init__()
         # NOTE: eps is irrelevant for HiGHS objective; keep eps=0.0 in the formulation
         ed_data_dict = create_data_dict(instance_path)
         self.lp_gen_idx = lp_gen_idx if lp_gen_idx is not None else torch.arange(51)
+        self.chunks_per_worker = chunks_per_worker
+
         self.form = EDFormulation(
             ed_data_dict,
             eps=0.0,
@@ -595,8 +601,8 @@ class EDModelLP(nn.Module):
             dtype=dtype,
             lp_gen_idx=self.lp_gen_idx,
         )
-        self.rhs = EDRHSBuilder(self.form)
 
+        self.rhs = EDRHSBuilder(self.form)
         self.solver = EDHiGHSSolver(
             self.form,
             self.rhs,
@@ -655,4 +661,4 @@ class EDModelLP(nn.Module):
             self.parallel_solve,
             self.lp_workers,
             self.parallel_min_batch,
-        )
+            self.chunks_per_worker)

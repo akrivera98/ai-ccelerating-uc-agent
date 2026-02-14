@@ -1,5 +1,6 @@
 import time
 import torch
+import argparse
 
 # Adjust these imports to your project
 from torch.utils.data import DataLoader
@@ -78,19 +79,16 @@ def run_objective(model, batch_tensors, parallel: bool):
     return f.detach().cpu(), (t1 - t0)
 
 
-def main():
+def main(lp_workers, chunks_per_worker):
     # ---- user params ----
     data_dir = "data/Train_Data"  # directory containing instance JSON files
     instance_path = "data/Train_Data/instance_2021_Q1_1/InputData.json"  # for EDModelLP/create_data_dict
-    B = 128
-    lp_workers = 8
+    B = 512
     device = "cpu"
-    dtype = torch.float64
+    dtype = torch.float32
 
-    print("Loading dataset...")
     ds = SimpleDataset(data_dir=data_dir)
 
-    print("Building one batch...")
     dl = DataLoader(
         ds, batch_size=B, shuffle=False, num_workers=0, collate_fn=collate_uc
     )
@@ -110,7 +108,6 @@ def main():
         f"  is_on: {tuple(is_on.shape)}  is_chg: {tuple(is_chg.shape)}  is_dis: {tuple(is_dis.shape)}"
     )
 
-    print("\nCreating model...")
     model = EDModelLP(
         instance_path=instance_path,
         device=device,
@@ -118,81 +115,84 @@ def main():
         parallel_solve=False,
         lp_workers=lp_workers,
         parallel_min_batch=1,
+        chunks_per_worker=chunks_per_worker,
     )
 
     # Warm-up (helps avoid one-time overhead dominating your timing)
-    print("\nWarm-up run (serial)...")
     _ = model.objective(load, solar, wind, is_on, is_chg, is_dis)
 
-    print("\nRunning SERIAL objective...")
     batch_tensors = (load, solar, wind, is_on, is_chg, is_dis)
     f_ser, t_ser = run_objective(model, batch_tensors, parallel=False)
-    print(f"  Serial time:   {t_ser:.4f} sec")
 
-    print("\nRunning PARALLEL objective...")
     f_par, t_par = run_objective(model, batch_tensors, parallel=True)
-    print(f"  Parallel time: {t_par:.4f} sec  (lp_workers={lp_workers})")
 
     max_diff = torch.max(torch.abs(f_ser - f_par)).item()
-    print(f"\nMax |f_serial - f_parallel| = {max_diff:.3e}")
 
-    if t_par > 0:
-        print(f"Speedup: {t_ser / t_par:.2f}x")
+    speedup = t_ser / t_par if t_par > 0 else float('inf')
 
-    print("\nFirst 5 objectives (serial):  ", f_ser[:5].numpy())
-    print("First 5 objectives (parallel):", f_par[:5].numpy())
+    #     # -----------------------------
+    # # Backward pass check
+    # # -----------------------------
+    # print("\n=== Backward pass check (serial vs parallel) ===")
 
-        # -----------------------------
-    # Backward pass check
-    # -----------------------------
-    print("\n=== Backward pass check (serial vs parallel) ===")
+    # # Re-create tensors with grad enabled (important: don't reuse @no_grad ones)
+    # load = load.detach().clone().requires_grad_(True)
+    # solar = solar.detach().clone().requires_grad_(True)
+    # wind = wind.detach().clone().requires_grad_(True)
+    # is_on = is_on.detach().clone().requires_grad_(True)
 
-    # Re-create tensors with grad enabled (important: don't reuse @no_grad ones)
-    load = load.detach().clone().requires_grad_(True)
-    solar = solar.detach().clone().requires_grad_(True)
-    wind = wind.detach().clone().requires_grad_(True)
-    is_on = is_on.detach().clone().requires_grad_(True)
+    # # These are binary indicators; gradient exists in your custom backward even if inputs are 0/1.
+    # is_chg = is_chg.detach().clone().requires_grad_(True)
+    # is_dis = is_dis.detach().clone().requires_grad_(True)
 
-    # These are binary indicators; gradient exists in your custom backward even if inputs are 0/1.
-    is_chg = is_chg.detach().clone().requires_grad_(True)
-    is_dis = is_dis.detach().clone().requires_grad_(True)
+    # batch_tensors_grad = (load, solar, wind, is_on, is_chg, is_dis)
 
-    batch_tensors_grad = (load, solar, wind, is_on, is_chg, is_dis)
+    # # Serial
+    # f_ser2, loss_ser, g_ser, t_ser_bwd = run_objective_and_backward(
+    #     model, batch_tensors_grad, parallel=False
+    # )
+    # print(f"Serial forward+backward time:   {t_ser_bwd:.4f} sec, loss={loss_ser:.6e}")
 
-    # Serial
-    f_ser2, loss_ser, g_ser, t_ser_bwd = run_objective_and_backward(
-        model, batch_tensors_grad, parallel=False
-    )
-    print(f"Serial forward+backward time:   {t_ser_bwd:.4f} sec, loss={loss_ser:.6e}")
+    # # Parallel (need fresh tensors so grads don’t mix)
+    # load_p = load.detach().clone().requires_grad_(True)
+    # solar_p = solar.detach().clone().requires_grad_(True)
+    # wind_p = wind.detach().clone().requires_grad_(True)
+    # is_on_p = is_on.detach().clone().requires_grad_(True)
+    # is_chg_p = is_chg.detach().clone().requires_grad_(True)
+    # is_dis_p = is_dis.detach().clone().requires_grad_(True)
 
-    # Parallel (need fresh tensors so grads don’t mix)
-    load_p = load.detach().clone().requires_grad_(True)
-    solar_p = solar.detach().clone().requires_grad_(True)
-    wind_p = wind.detach().clone().requires_grad_(True)
-    is_on_p = is_on.detach().clone().requires_grad_(True)
-    is_chg_p = is_chg.detach().clone().requires_grad_(True)
-    is_dis_p = is_dis.detach().clone().requires_grad_(True)
+    # batch_tensors_grad_p = (load_p, solar_p, wind_p, is_on_p, is_chg_p, is_dis_p)
 
-    batch_tensors_grad_p = (load_p, solar_p, wind_p, is_on_p, is_chg_p, is_dis_p)
+    # f_par2, loss_par, g_par, t_par_bwd = run_objective_and_backward(
+    #     model, batch_tensors_grad_p, parallel=True
+    # )
+    # print(f"Parallel forward+backward time: {t_par_bwd:.4f} sec, loss={loss_par:.6e}")
 
-    f_par2, loss_par, g_par, t_par_bwd = run_objective_and_backward(
-        model, batch_tensors_grad_p, parallel=True
-    )
-    print(f"Parallel forward+backward time: {t_par_bwd:.4f} sec, loss={loss_par:.6e}")
+    # # Compare losses/outputs
+    # print(f"Max |f_ser - f_par|: {torch.max(torch.abs(f_ser2 - f_par2)).item():.3e}")
+    # print(f"|loss_ser - loss_par|: {abs(loss_ser - loss_par):.3e}")
 
-    # Compare losses/outputs
-    print(f"Max |f_ser - f_par|: {torch.max(torch.abs(f_ser2 - f_par2)).item():.3e}")
-    print(f"|loss_ser - loss_par|: {abs(loss_ser - loss_par):.3e}")
-
-    # Compare gradients
-    for k in ["load", "solar", "wind", "is_on", "is_chg", "is_dis"]:
-        d = max_abs_diff(g_ser[k], g_par[k])
-        if d is None:
-            print(f"grad[{k}]: None (no grad)")
-        else:
-            print(f"Max |grad_{k} serial - parallel|: {d:.3e}")
+    # # Compare gradients
+    # for k in ["load", "solar", "wind", "is_on", "is_chg", "is_dis"]:
+    #     d = max_abs_diff(g_ser[k], g_par[k])
+    #     if d is None:
+    #         print(f"grad[{k}]: None (no grad)")
+    #     else:
+    #         print(f"Max |grad_{k} serial - parallel|: {d:.3e}")
     
-
+    return speedup
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('n_workers')
+    parser.add_argument('-chunks_per_worker', default=1, type=int)
+    args = parser.parse_args()
+    lp_workers = int(args.n_workers)
+    chunks_per_worker = args.chunks_per_worker
+    speedup = main(lp_workers, chunks_per_worker)
+    print(
+        f"RESULT workers={args.n_workers} "
+        f"chunks={args.chunks_per_worker} "
+        f"speedup={speedup:.6f}",
+        flush=True,
+    )

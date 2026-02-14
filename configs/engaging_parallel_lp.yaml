@@ -2,7 +2,7 @@ device: cpu
 is_debug: false
 seed: 42
 trainer:
-  name: less_gens_scipy_trainer
+  name: scpiy_lp_trainer
   max_epochs: 25
   optimizer:
     name: "Adam"
@@ -12,7 +12,7 @@ trainer:
   do_val: true
   val_every: 5
   early_stopping_patience: 3
-  early_stopping_perc: 0.01
+  early_stopping_perc: 0.05
 
   loss_fn: 
      name: scipy_solver_loss
@@ -20,39 +20,13 @@ trainer:
       instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
       weights:
         supervised: 1.0
-        ed_objective: 1.0
+        ed_objective: 0.001
         violations: 1.0
 
 dataset:
   name: simple_dataset
   params:
     data_dir: "data/Train_Data"
-    fixed_off_gens:
-      - gen_ea4d2032
-      - gen_82daac85
-      - gen_528be175
-      - gen_3223a28b
-      - gen_3f6e6ecf
-      - gen_16b60ab4
-      - gen_bec834ae
-      - gen_ff58fdf4
-      - gen_f3e5828f
-      - gen_d5aea532
-      - gen_809ce5b4
-      - gen_bc3de19e
-      - gen_a7876643
-      - gen_7aeb2c57
-      - gen_a06f1505
-      - gen_b4eba0b8
-      - gen_d84b2d57
-      - gen_e2a0735e
-      - gen_b42fba47
-      - gen_a42b5872
-      - gen_4e0ff615
-      - gen_5f4016ca
-      - gen_12c8d461
-    fixed_on_gens: 
-      - gen_204e519c
   splits:
     train: 0.7
     val: 0.15
@@ -67,11 +41,11 @@ model:
     round_thermal: "threshold_ste"
 
 ed_model:
-  name: lp_scipy
+  name: lp_scipy_parallel
   params:
     instance_path: "data/Train_Data/instance_2021_Q1_1/InputData.json"
 
 paths: 
-  out_dir: "results/less_gens"
+  out_dir: "results/scipy_engaging"
 
 
