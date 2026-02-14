@@ -12,7 +12,6 @@ from joblib import Parallel, delayed
 
 from src.ed_models.cannon import EDFormulation, EDRHSBuilder
 from src.ed_models.data_utils import create_data_dict
-import time
 # ============================================================
 # Multiprocessing helpers for HiGHS
 # ============================================================
@@ -70,7 +69,6 @@ def _solve_highs_chunk(idxs, c_np, h_np, b_np, A_ub, A_eq, options):
         if not res.success:
             return (idxs, False, f"batch {i}: {res.message}", None, None, None)
 
-
         funs.append(float(res.fun))
         lams.append(res.ineqlin.marginals)
         nus.append(res.eqlin.marginals)
@@ -121,9 +119,8 @@ class EDHiGHSSolver(nn.Module):
         )
 
         # Precompute bound extraction masks from FULL G (on CPU / torch)
-        if self.extract_bounds: 
+        if self.extract_bounds:
             self._precompute_bounds()
-
 
     def _precompute_bounds(self):
         with torch.no_grad():
@@ -393,7 +390,15 @@ class EDHiGHSObjectiveFn(Function):
             ]
 
             outs = Parallel(n_jobs=n_jobs, backend="loky")(
-                delayed(_solve_highs_chunk)(idxs, c_np, h_np, b_np, A_ub, A_eq, options={"time_limit": highs_time_limit})
+                delayed(_solve_highs_chunk)(
+                    idxs,
+                    c_np,
+                    h_np,
+                    b_np,
+                    A_ub,
+                    A_eq,
+                    options={"time_limit": highs_time_limit},
+                )
                 for idxs in chunks
             )
 
@@ -559,6 +564,7 @@ class EDHiGHSObjectiveFn(Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -661,4 +667,5 @@ class EDModelLP(nn.Module):
             self.parallel_solve,
             self.lp_workers,
             self.parallel_min_batch,
-            self.chunks_per_worker)
+            self.chunks_per_worker,
+        )
