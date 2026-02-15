@@ -1,6 +1,6 @@
 import yaml
 import argparse
-
+import os
 
 class Config:
     def __init__(self, cfg_dict):
@@ -51,16 +51,40 @@ def parse_args():
         default="configs/exclude_gens.yaml",
         help="Path to config YAML",
     )
+
+    # ---- overrides (optional) ----
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Override trainer.batch_size from config",
+    )
+
+    parser.add_argument(
+        "--out-dir",
+        type=str,
+        default=None,
+        help="Override base output directory",
+    )
     return parser.parse_args()
 
 
-def load_config(path: str) -> dict:
+def apply_overrides(cfg: Config, args) -> None:
+    if args.batch_size is not None:
+        cfg.trainer.batch_size = args.batch_size
+
+    if args.out_dir is not None:
+        cfg.paths.out_dir = args.out_dir
+
+def load_config(path: str, args=None) -> dict:
     with open(path, "r") as f:
         cfg = yaml.safe_load(f)
 
     cfg = Config(cfg)
+    
+    if args is not None:
+        apply_overrides(cfg, args)
     return cfg
-
 
 def load_registry():
     """
