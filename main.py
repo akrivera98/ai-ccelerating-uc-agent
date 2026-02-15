@@ -4,7 +4,7 @@ from src.utils.main_utils import parse_args, load_config, load_registry
 
 def main():
     args = parse_args()
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, args)
 
     load_registry()
 
